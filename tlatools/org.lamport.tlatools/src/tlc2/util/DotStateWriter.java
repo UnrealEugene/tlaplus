@@ -30,14 +30,15 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
+import java.util.stream.Collectors;
 
+import tla2sany.semantic.FormalParamNode;
+import tla2sany.semantic.SymbolNode;
 import tlc2.tool.Action;
 import tlc2.tool.TLCState;
 import util.FileUtil;
+import util.UniqueString;
 
 /**
  * Writes the given state in dot notation.
@@ -284,9 +285,22 @@ public class DotStateWriter extends StateWriter {
 	protected String dotTransitionLabel(final TLCState state, final TLCState successor, final Action action) {
 	    // Only colorize edges if specified. Default to black otherwise.
 		final String color = colorize ? this.getActionColor(action).toString() : "black" ;
-		
+
 	    // Only add action label if specified.
-		final String actionName = actionLabels ? action.getName().toString() : "" ;
+		String actionName = "";
+		if (actionLabels) {
+			FormalParamNode[] params = action.getOpDef().getParams();
+			Context context = action.con;
+			String[] paramValues = new String[params.length];
+			for (int i = 0; i < params.length; i++) {
+				paramValues[i] = Objects.toString(context.lookup(params[i]));
+			}
+			actionName = action.getName().toString() + "(" + String.join(", ", paramValues) + ")";
+		}
+
+		System.out.println(action);
+		System.out.println(Arrays.stream(action.getOpDef().getParams()).map(SymbolNode::getName).collect(Collectors.toList()));
+		System.out.println(action.con);
 		
 		final String labelFmtStr = " [label=\"%s\",color=\"%s\",fontcolor=\"%s\"]";
 		return String.format(labelFmtStr, actionName, color, color);

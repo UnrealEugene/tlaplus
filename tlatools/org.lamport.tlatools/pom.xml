@@ -187,7 +187,15 @@
                     </execution>
                </executions>
            </plugin>
-      </plugins>
+        <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-compiler-plugin</artifactId>
+            <configuration>
+                <source>11</source>
+                <target>11</target>
+            </configuration>
+        </plugin>
+    </plugins>
   </build>
 
   <dependencies>
@@ -237,7 +245,12 @@
 		    <artifactId>org.eclipse.lsp4j.jsonrpc</artifactId>
 		    <version>0.12.0</version>
 		</dependency>
-      </dependencies>
+	  <dependency>
+		  <groupId>com.sun.mail</groupId>
+		  <artifactId>mailapi</artifactId>
+		  <version>1.6.2</version>
+	  </dependency>
+  </dependencies>
 
       <!-- August 2014 - TL
            added a non-default profile (must be called explicitly)
