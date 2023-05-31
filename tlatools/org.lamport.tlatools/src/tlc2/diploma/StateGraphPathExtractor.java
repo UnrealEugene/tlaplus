@@ -1,11 +1,16 @@
 package tlc2.diploma;
 
+import tlc2.output.EC;
+import tlc2.output.MP;
 import tlc2.tool.Action;
 import tlc2.tool.TLCState;
 
+import java.text.SimpleDateFormat;
 import java.util.*;
 
 public class StateGraphPathExtractor {
+    private static final SimpleDateFormat SDF = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+
     private static class NetworkEdge {
         int a, b, f, c;
         Action action;
@@ -27,7 +32,9 @@ public class StateGraphPathExtractor {
 
     private final List<List<Integer>> g = new ArrayList<>();
     private final List<NetworkEdge> e = new ArrayList<>();
+    private final Queue<Integer> q = new ArrayDeque<>();
     private final List<Integer> d = new ArrayList<>();
+    private final List<Integer> p = new ArrayList<>();
     private final List<Integer> pt = new ArrayList<>();
 
     private final Map<Long, Integer> fpToId = new HashMap<>();
@@ -41,6 +48,7 @@ public class StateGraphPathExtractor {
         states.add(state);
         g.add(new ArrayList<>());
         d.add(INF);
+        p.add(-1);
         pt.add(0);
     }
 
@@ -115,11 +123,10 @@ public class StateGraphPathExtractor {
         }
     }
 
-    private boolean bfs() {
+    private boolean dinicBfs() {
         Collections.fill(d, INF);
         d.set(getSource(), 0);
 
-        Queue<Integer> q = new ArrayDeque<>();
         q.add(getSource());
         while (!q.isEmpty() && d.get(getSink()) == INF) {
             int cur = q.poll();
@@ -133,11 +140,12 @@ public class StateGraphPathExtractor {
                 }
             }
         }
+        q.clear();
 
         return d.get(getSink()) != INF;
     }
 
-    private boolean dfs(int v) {
+    private boolean dinicDfs(int v) {
         if (v == getSink()) {
             return true;
         }
@@ -148,7 +156,7 @@ public class StateGraphPathExtractor {
             int to = fwd.b;
 
             if (d.get(to) == d.get(v) + 1 && fwd.c - fwd.f > 0) {
-                boolean pushed = dfs(to);
+                boolean pushed = dinicDfs(to);
                 if (pushed) {
                     fwd.f += 1;
                     bck.f -= 1;
@@ -160,16 +168,17 @@ public class StateGraphPathExtractor {
     }
 
     private void findMaxFlow() {
-        int flow = 0;
-        while (bfs()) {
+        while (dinicBfs()) {
             Collections.fill(pt, 0);
             while (true) {
-                if (!dfs(getSource())) {
+                if (!dinicDfs(getSource())) {
                     break;
                 }
             }
         }
+    }
 
+    private int computePathCount() {
         int paths = 0;
         for (int i = 0; i < e.size(); i += 2) {
             NetworkEdge fwd = e.get(i);
@@ -177,43 +186,156 @@ public class StateGraphPathExtractor {
                 paths += fwd.f;
             }
         }
-        System.out.println("paths = " + paths);
+        return paths;
     }
 
-    private boolean findCycle(int v, List<Edge> result) {
-        for (; pt.get(v) < g.get(v).size(); pt.set(v, pt.get(v) + 1)) {
-            int eId = g.get(v).get(pt.get(v));
-            if (eId % 2 == 1) {
+    public List<TLCState> getStates() {
+        return new ArrayList<>(states.subList(1, fpToId.size() + 1));
+    }
+
+    public boolean tryRemoveNegativeCycleAcyclic() {
+        Collections.fill(d, INF);
+        Collections.fill(p, -1);
+
+        for (int eId : g.get(getRoot())) {
+            if (eId % 2 == 0) {
                 continue;
             }
-
-            NetworkEdge fwd = e.get(eId);
-            NetworkEdge bck = e.get(eId ^ 1);
-            int to = fwd.b;
-            if (to == getSink()) {
-                continue;
+            NetworkEdge edge = e.get(eId);
+            int to = edge.b;
+            if (edge.c - edge.f > 0) {
+                d.set(to, 0);
+                p.set(to, eId);
+                q.add(to);
             }
+        }
 
-            if (fwd.f > 0) {
-                fwd.f -= 1;
-                bck.f += 1;
-                if (to == getRoot()) {
-                    return true;
+        while (!q.isEmpty() && d.get(getRoot()) == INF) {
+            int cur = q.poll();
+            for (int eId : g.get(cur)) {
+                NetworkEdge edge = e.get(eId);
+                int to = edge.b;
+                if (to == getRoot() && eId % 2 == 0) {
+                    continue;
                 }
-                result.add(new Edge(v - 1, to - 1, fwd.action));
-                return findCycle(to, result);
+                if (d.get(to) == INF && edge.c - edge.f > 0) {
+                    d.set(to, d.get(cur) + 1);
+                    p.set(to, eId);
+                    q.add(to);
+                }
             }
+        }
+        q.clear();
+
+        if (d.get(getRoot()) != INF) {
+            int cur = getRoot();
+            do {
+                int eId = p.get(cur);
+                NetworkEdge fwd = e.get(eId);
+                NetworkEdge bck = e.get(eId ^ 1);
+                fwd.f += 1;
+                bck.f -= 1;
+                cur = fwd.a;
+            } while (cur != getRoot());
+            return true;
         }
         return false;
     }
 
-    public List<TLCState> getStates() {
-        return new ArrayList<>(states.subList(1, states.size() - 1));
+    private boolean checkAcyclicDfs(int v, List<Integer> color) {
+        if (color.get(v) == 1) {
+            return false;
+        }
+
+        color.set(v, 1);
+        for (int eId : g.get(v)) {
+            if (eId % 2 != 0) {
+                continue;
+            }
+            NetworkEdge edge = e.get(eId);
+            int to = edge.b;
+            if ((to == getRoot() && edge.action == null) || to == getSink() || to == v) {
+                continue;
+            }
+            if (!checkAcyclicDfs(to, color)) {
+                return false;
+            }
+        }
+        color.set(v, 2);
+        return true;
+    }
+
+    private boolean isGraphAcyclic() {
+        return checkAcyclicDfs(getRoot(), new ArrayList<>(Collections.nCopies(states.size(), 0)));
+    }
+
+    private List<NetworkEdge> findEulerCycle(int root) {
+        List<NetworkEdge> edges = new ArrayList<>();
+        Deque<NetworkEdge> edgeStack = new ArrayDeque<>();
+
+        NetworkEdge firstEdge = e.get(g.get(root).get(0));
+        edgeStack.addLast(firstEdge);
+        while (!edgeStack.isEmpty()) {
+            NetworkEdge edge = edgeStack.peekLast();
+            int v = edge.b;
+            for (; pt.get(v) < g.get(v).size(); pt.set(v, pt.get(v) + 1)) {
+                int eId = g.get(v).get(pt.get(v));
+                if (eId % 2 == 1) {
+                    continue;
+                }
+
+                NetworkEdge fwd = e.get(eId);
+                NetworkEdge bck = e.get(eId ^ 1);
+                int to = fwd.b;
+                if (to == getSink()) {
+                    continue;
+                }
+
+                if (fwd.f > 0) {
+                    fwd.f -= 1;
+                    bck.f += 1;
+                    edgeStack.addLast(fwd);
+                    break;
+                }
+            }
+            if (pt.get(v) == g.get(v).size()) {
+                edgeStack.pollLast();
+                edges.add(edge);
+            }
+        }
+        Collections.reverse(edges);
+        return edges;
+    }
+
+    private String now() {
+        return SDF.format(new Date());
     }
 
     public List<List<Edge>> extractPaths() {
         this.constructNetwork();
+
+        boolean graphAcyclic = this.isGraphAcyclic();
+        if (!graphAcyclic) {
+            MP.printMessage(EC.GENERAL, "  Warning: model state graph contains cycles!");
+        }
+
         this.findMaxFlow();
+        int pathCount = this.computePathCount();
+        MP.printMessage(EC.GENERAL, "  Found maximum flow in constructed network (" + pathCount + " paths, " + now() + ").");
+
+        // remove negative cycles from network
+        if (graphAcyclic) {
+            int negativeCyclesCount = 0;
+            while (this.tryRemoveNegativeCycleAcyclic()) {
+                negativeCyclesCount++;
+            }
+            if (negativeCyclesCount > 0) {
+                MP.printMessage(EC.GENERAL, "  Found " + negativeCyclesCount + " negative cycles in the flow ("
+                        + (pathCount - negativeCyclesCount) + " paths, " + now() + ").");
+            } else {
+                MP.printMessage(EC.GENERAL, "  No negative cycles were found in resulting flow (" + now() + ").");
+            }
+        }
 
         // transform flow to circulation
         for (int i = 0; i < e.size(); i += 2) {
@@ -225,20 +347,27 @@ public class StateGraphPathExtractor {
             }
         }
 
-        List<List<Edge>> result = new ArrayList<>();
+        // find paths
         Collections.fill(pt, 0);
-//        int i = 1;
-        while (true) {
-            List<Edge> path = new ArrayList<>();
-            if (!findCycle(getRoot(), path)) {
-                break;
+        List<NetworkEdge> eulerCycle = this.findEulerCycle(getRoot());
+
+        List<List<Edge>> result = new ArrayList<>();
+        List<Edge> path = new ArrayList<>();
+        for (NetworkEdge edge : eulerCycle) {
+            if (edge.b == getRoot()) {
+                result.add(path);
+                path = new ArrayList<>();
+            } else {
+                path.add(new Edge(edge.a - 1, edge.b - 1, edge.action));
             }
-            result.add(path);
         }
+
+        MP.printMessage(EC.GENERAL, "  Successfully found path cover of model state graph (" + now() + ").");
 
         g.clear();
         e.clear();
         d.clear();
+        p.clear();
         pt.clear();
         fpToId.clear();
 
