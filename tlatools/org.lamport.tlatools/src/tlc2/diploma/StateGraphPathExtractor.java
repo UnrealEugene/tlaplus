@@ -77,7 +77,7 @@ public class StateGraphPathExtractor {
         edges.add(bck);
     }
 
-    public void addTransition(TLCState from, TLCState to, Action action) {
+    public synchronized void addTransition(TLCState from, TLCState to, Action action) {
         int fromId = tryAddNode(from);
         int toId = tryAddNode(to);
         addEdge(fromId, toId, INF / 2, action);
@@ -243,10 +243,6 @@ public class StateGraphPathExtractor {
     }
 
     private boolean checkAcyclicDfs(int v, List<Integer> color) {
-        if (color.get(v) == 1) {
-            return false;
-        }
-
         color.set(v, 1);
         for (int eId : adjList.get(v)) {
             if (eId % 2 != 0) {
@@ -255,6 +251,12 @@ public class StateGraphPathExtractor {
             NetworkEdge edge = edges.get(eId);
             int to = edge.to;
             if ((to == getRoot() && edge.action == null) || to == getSink() || to == v) {
+                continue;
+            }
+            if (color.get(to) == 1) {
+                return false;
+            }
+            if (color.get(to) != 0) {
                 continue;
             }
             if (!checkAcyclicDfs(to, color)) {
