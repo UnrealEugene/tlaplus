@@ -1,18 +1,19 @@
 package tlc2.diploma;
 
 import tla2sany.semantic.*;
-import tlc2.diploma.model.type.*;
+import tlc2.diploma.model.*;
 import tlc2.tool.Action;
 import tlc2.tool.BuiltInOPs;
 import tlc2.tool.impl.Tool;
-import util.Assert;
+import tlc2.util.Context;
+import tlc2.value.impl.*;
 import util.UniqueString;
 
 import java.util.*;
 import java.util.stream.Collectors;
 
-import static tla2sany.semantic.ASTConstants.*;
 import static tlc2.tool.ToolGlobals.*;
+import static tlc2.value.ValueConstants.*;
 
 public class TlaVariableTypeExtractor {
     private final Tool tool;
@@ -27,7 +28,6 @@ public class TlaVariableTypeExtractor {
                 .filter(a -> a.getName().toString().toLowerCase().contains("typeok"))
                 .findFirst();
         if (typeOkOpt.isEmpty()) {
-            Assert.fail("Can't find TypeOK invariant in the specification.");
             return null;
         }
         Action typeOk = typeOkOpt.get();
@@ -102,6 +102,38 @@ public class TlaVariableTypeExtractor {
         return types;
     }
 
+    private TlaType getUnionOfTypes(List<TlaType> types) {
+        if (types.isEmpty()) {
+            return new TlaAnyType();
+        }
+        if (types.stream().distinct().count() == 1) {
+            return types.get(0);
+        }
+        List<Class<?>> classes = types.stream().map(Object::getClass).distinct().collect(Collectors.toList());
+        if (classes.size() != 1) {
+            return new TlaAnyType();
+        }
+        Class<?> clazz = classes.get(0);
+        if (clazz == TlaRecordType.class) {
+            Map<String, TlaType> newFields = types.stream()
+                    .map(t -> ((TlaRecordType) t).getFields().entrySet())
+                    .flatMap(Collection::stream)
+                    .collect(Collectors.groupingBy(Map.Entry::getKey,
+                            Collectors.mapping(Map.Entry::getValue,
+                                    Collectors.collectingAndThen(Collectors.toList(), this::getUnionOfTypes))));
+            return new TlaRecordType(newFields);
+        }
+        if (clazz == TlaEnumType.class) {
+            List<String> newEnumElements = types.stream()
+                    .map(t -> ((TlaEnumType) t).getElements())
+                    .flatMap(Collection::stream)
+                    .distinct()
+                    .collect(Collectors.toList());
+            return new TlaEnumType(newEnumElements);
+        }
+        return new TlaAnyType();
+    }
+
     private TlaType extractVariableType(OpApplNode node) {
         ExprOrOpArgNode[] args = node.getArgs();
         SymbolNode opNode = node.getOperator();
@@ -129,21 +161,27 @@ public class TlaVariableTypeExtractor {
                         if (opModuleName.equals("Integers") && opName.equals("Int")) {
                             return new TlaIntType();
                         }
+                        if (opModuleName.equals("Sequences") && opName.equals("Seq")) {
+                            return new TlaSeqType(extractVariableType(args[0]));
+                        }
                     }
                     if (opName.equals("BOOLEAN")) {
                         return new TlaBoolType();
                     }
                     return extractVariableType(opDefNode.getBody());
                 }
-//                if (opNode.getKind() == ConstantDeclKind) {
-//                    Value value = (Value) this.tool.lookup(opNode, Context.Empty, false);
-//                    return extractValueType(value, opNode.getName().toString());
-//                }
+                if (opNode.getKind() == ConstantDeclKind) {
+                    Value value = (Value) this.tool.lookup(opNode, Context.Empty, false);
+                    return extractSetType(value);
+                }
                 break;
             }
             case OPCODE_sof: {
                 TlaType fromType = extractVariableType(args[0]);
                 TlaType toType = extractVariableType(args[1]);
+                if (fromType instanceof TlaNatType) {
+                    return new TlaSeqType(toType);
+                }
                 return new TlaFunctionType(fromType, toType);
             }
             case OPCODE_sor: {
@@ -160,26 +198,35 @@ public class TlaVariableTypeExtractor {
                 if (args.length == 0) { // shouldn't pass invariant check
                     return new TlaAnyType();
                 }
-                if (Arrays.stream(args).allMatch(e -> e.getKind() == OpApplKind)) {
-                    List<OpApplNode> opApplArgs = Arrays.stream(args)
-                            .map(e -> ((OpApplNode) e))
-                            .collect(Collectors.toList());
-                    if (opApplArgs.stream()
-                            .map(e -> e.getOperator().getName())
-                            .allMatch(e -> e.equals("TRUE") || e.equals("FALSE"))) {
-                        return new TlaBoolType();
+                List<ExprOrOpArgNode> elems = Arrays.asList(args);
+                List<Integer> elemKinds = elems.stream().map(SemanticNode::getKind).distinct().collect(Collectors.toList());
+                if (elemKinds.size() != 1) {
+                    return new TlaAnyType();
+                }
+                int kind = elemKinds.get(0);
+                switch (kind) {
+                    case OpApplKind: {
+                        List<OpApplNode> opApplArgs = Arrays.stream(args)
+                                .map(e -> ((OpApplNode) e))
+                                .collect(Collectors.toList());
+                        if (opApplArgs.stream()
+                                .map(e -> e.getOperator().getName())
+                                .allMatch(e -> e.equals("TRUE") || e.equals("FALSE"))) {
+                            return new TlaBoolType();
+                        }
+                        break;
                     }
-                }
-                if (Arrays.stream(args).allMatch(e -> e.getKind() == StringKind)) {
-                    return new TlaEnumType(Arrays.stream(args)
-                            .map(e -> ((StringNode) e).getRep().toString())
-                            .collect(Collectors.toList()));
-                }
-                if (Arrays.stream(args).allMatch(e -> e.getKind() == NumeralKind)) {
-                    int min = Arrays.stream(args)
-                            .mapToInt(e -> ((NumeralNode) e).val())
-                            .min().getAsInt();
-                    return min >= 0 ? new TlaNatType() : new TlaIntType();
+                    case StringKind: {
+                        return new TlaEnumType(Arrays.stream(args)
+                                .map(e -> ((StringNode) e).getRep().toString())
+                                .collect(Collectors.toList()));
+                    }
+                    case NumeralKind: {
+                        int min = Arrays.stream(args)
+                                .mapToInt(e -> ((NumeralNode) e).val())
+                                .min().getAsInt();
+                        return min >= 0 ? new TlaNatType() : new TlaIntType();
+                    }
                 }
                 break;
             }
@@ -199,7 +246,46 @@ public class TlaVariableTypeExtractor {
                 List<TlaType> types = assocArgs.stream()
                         .map(this::extractVariableType)
                         .collect(Collectors.toList());
-                return new TlaUnionType(types);
+                return getUnionOfTypes(types);
+            }
+        }
+        return new TlaAnyType();
+    }
+
+    private TlaType extractSetType(Value value) {
+        switch (value.getKind()) {
+            case SETENUMVALUE: {
+                SetEnumValue enumValue = (SetEnumValue) value;
+                List<Value> elems = Arrays.asList(enumValue.elems.toArray());
+                List<Byte> elemKinds = elems.stream().map(Value::getKind).distinct().collect(Collectors.toList());
+                if (elemKinds.size() != 1) {
+                    return new TlaAnyType();
+                }
+                byte kind = elemKinds.get(0);
+                switch (kind) {
+                    case STRINGVALUE: {
+                        return new TlaEnumType(elems.stream()
+                                .map(v -> ((StringValue) v).val.toString())
+                                .collect(Collectors.toList()));
+                    }
+                    case INTVALUE: {
+                        if (elems.stream().allMatch(v -> ((IntValue) v).val >= 0)) {
+                            return new TlaNatType();
+                        }
+                        return new TlaIntType();
+                    }
+                    case SETENUMVALUE: {
+                        List<TlaType> types = elems.stream()
+                                .map(this::extractSetType)
+                                .distinct()
+                                .collect(Collectors.toList());
+                        if (types.size() != 1) {
+                            return new TlaSetOfType(new TlaAnyType());
+                        }
+                        return new TlaSetOfType(types.get(0));
+                    }
+                }
+                return new TlaAnyType();
             }
         }
         return new TlaAnyType();
