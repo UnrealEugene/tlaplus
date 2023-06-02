@@ -7,6 +7,10 @@ import tla2sany.semantic.OpApplNode;
 import tla2sany.st.Location;
 import tlc2.TLCGlobals;
 import tlc2.diploma.StateGraphPathExtractor;
+import tlc2.diploma.TlaTypeToGoVisitor;
+import tlc2.diploma.TlaVariableTypeExtractor;
+import tlc2.diploma.model.TlaRecordType;
+import tlc2.diploma.model.TlaType;
 import tlc2.module.Json;
 import tlc2.output.EC;
 import tlc2.output.MP;
@@ -17,10 +21,10 @@ import tlc2.value.IValue;
 import tlc2.value.impl.LazyValue;
 import tlc2.value.impl.StringValue;
 import tlc2.value.impl.Value;
+import util.FileUtil;
 import util.UniqueString;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
+import java.io.*;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -77,8 +81,8 @@ public class JsonStateWriter extends StateWriter {
         writeState(state, successor, actionChecks, from, length, successorStateIsNew, Visualization.DEFAULT, null);
     }
 
-    private void writeState(TLCState state, TLCState successor, BitVector actionChecks, int from, int length,
-                            boolean successorStateIsNew, Visualization visualization, Action action) {
+    private void writeState(TLCState state, TLCState successor, BitVector ignoredActionChecks, int ignoredFrom, int ignoredLength,
+                            boolean ignoredSuccessorStateIsNew, Visualization visualization, Action action) {
         if (visualization == Visualization.STUTTERING) {
             return;
         }
@@ -171,6 +175,47 @@ public class JsonStateWriter extends StateWriter {
         }
 
         MP.printMessage(EC.GENERAL, "Path cover successfully exported into JSON file " + getDumpFileName() + ".");
+
+        TlaVariableTypeExtractor typeExtractor = new TlaVariableTypeExtractor(tool);
+        Map<String, TlaType> typeMap = typeExtractor.extract();
+        if (typeMap == null) {
+            MP.printMessage(EC.GENERAL, "Can't find TypeOK invariant: Go model mapping file can't be generated.");
+        } else {
+            TlaRecordType tlaStateType = new TlaRecordType(typeMap);
+
+            StringBuilder sb = new StringBuilder();
+
+            TlaTypeToGoVisitor visitor = new TlaTypeToGoVisitor();
+            sb.append(visitor.visit(tlaStateType));
+
+            sb.append("type ModelMappingImpl struct{};")
+                    .append("func(m*ModelMappingImpl)Init(){};")
+                    .append("func(m*ModelMappingImpl)Reset(){};")
+                    .append("func(m*ModelMappingImpl)State()ModelState{return ModelState{}};");
+
+            sb.append("type Action int;const(");
+            for (UniqueString actionName : actionNames.values()) {
+                sb.append(actionName)
+                        .append(" Action=iota;");
+            }
+            sb.append(");");
+
+            sb.append("func(m*ModelMappingImpl)PerformAction(id Action,args[]any){switch id {");
+            for (UniqueString actionName : actionNames.values()) {
+                sb.append("case ")
+                        .append(actionName)
+                        .append(":break;");
+            }
+            sb.append("}};");
+
+            String goFilename = getDumpFileName().replaceAll(".json$", ".go");
+            try (BufferedWriter goWriter = new BufferedWriter(new OutputStreamWriter(FileUtil.newBFOS(goFilename)))) {
+                goWriter.write(sb.toString());
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+            MP.printMessage(EC.GENERAL, "Successfully generated Go model mapping file " + goFilename + ".");
+        }
 
         super.close();
     }
