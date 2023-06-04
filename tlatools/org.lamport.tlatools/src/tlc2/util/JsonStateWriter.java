@@ -184,6 +184,7 @@ public class JsonStateWriter extends StateWriter {
             TlaRecordType tlaStateType = new TlaRecordType(typeMap);
 
             StringBuilder sb = new StringBuilder();
+            sb.append("package test;");
 
             TlaTypeToGoVisitor visitor = new TlaTypeToGoVisitor();
             sb.append(visitor.visit(tlaStateType));
@@ -193,7 +194,7 @@ public class JsonStateWriter extends StateWriter {
                     .append("func(m*ModelMappingImpl)Reset(){};")
                     .append("func(m*ModelMappingImpl)State()ModelState{return ModelState{}};");
 
-            sb.append("type Action int;const(");
+            sb.append("type Action = int;const(");
             for (UniqueString actionName : actionNames.values()) {
                 sb.append(actionName)
                         .append(" Action=iota;");
