@@ -46,12 +46,7 @@ import tlc2.tool.impl.ParameterizedSpecObj.PostCondition;
 import tlc2.tool.impl.Tool;
 import tlc2.tool.management.ModelCheckerMXWrapper;
 import tlc2.tool.management.TLCStandardMBean;
-import tlc2.util.DotStateWriter;
-import tlc2.util.FP64;
-import tlc2.util.IStateWriter;
-import tlc2.util.NoopStateWriter;
-import tlc2.util.RandomGenerator;
-import tlc2.util.StateWriter;
+import tlc2.util.*;
 import tlc2.value.RandomEnumerableValues;
 import util.Assert.TLCRuntimeException;
 import util.DebugPrinter;
@@ -401,6 +396,7 @@ public class TLC {
     {
 		String dumpFile = null;
 		boolean asDot = false;
+        boolean asJson = false;
 	    boolean colorize = false;
 	    boolean actionLabels = false;
 		boolean snapshot = false;
@@ -573,8 +569,7 @@ public class TLC {
             } else if (args[index].equals("-dump"))
             {
                 index++; // consume "-dump".
-                if (((index + 1) < args.length) && args[index].startsWith("dot"))
-                {
+                if (((index + 1) < args.length) && args[index].startsWith("dot")) {
                 	final String dotArgs = args[index].toLowerCase();
                 	index++; // consume "dot...".
                 	asDot = true;
@@ -583,12 +578,13 @@ public class TLC {
                 	snapshot = dotArgs.contains("snapshot");
                 	stuttering = dotArgs.contains("stuttering");
 					dumpFile = getDumpFile(args[index++], ".dot");
-                }
-                else if (index < args.length)
-                {
+                } else if (((index + 1) < args.length) && args[index].equals("json")) {
+                    index++;
+                    asJson = true;
+                    dumpFile = getDumpFile(args[index++], ".json");
+                } else if (index < args.length) {
 					dumpFile = getDumpFile(args[index++], ".dump");
-                } else
-                {
+                } else {
                     printErrorMsg("Error: A file name for dumping states required.");
                     return false;
                 }
@@ -1091,10 +1087,12 @@ public class TLC {
 				dumpFile = dumpFile.replace("${metadir}", metadir);
 			}
 			try {
-				if (asDot) {
-					this.stateWriter = new DotStateWriter(dumpFile, colorize, actionLabels, snapshot, stuttering);
-				} else {
-					this.stateWriter = new StateWriter(dumpFile);
+				if (asJson) {
+                    this.stateWriter = new JsonStateWriter(dumpFile);
+                } else if (asDot) {
+                    this.stateWriter = new DotStateWriter(dumpFile, colorize, actionLabels, snapshot, stuttering);
+                } else {
+                    this.stateWriter = new StateWriter(dumpFile);
 				}
 			} catch (IOException e) {
 				printErrorMsg(String.format("Error: Given file name %s for dumping states invalid.", dumpFile));

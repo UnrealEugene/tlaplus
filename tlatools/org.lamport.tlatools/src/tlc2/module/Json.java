@@ -239,7 +239,8 @@ public class Json {
     }
     value.normalize();
     for (int i = 0; i < domain.length; i++) {
-      if (((IntValue) domain[i]).val != (i + 1)) {
+      // TODO: fix this hack
+      if (((IntValue) domain[i]).val != (i + 1) && ((IntValue) domain[i]).val != i) {
         return false;
       }
     }

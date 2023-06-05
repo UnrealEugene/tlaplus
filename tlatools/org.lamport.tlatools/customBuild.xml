@@ -134,7 +134,7 @@
 		</echo>
 		<!-- compile -->
 		<mkdir dir="${class.dir}" />
-		<javac includeantruntime="false" srcdir="${src.dir}" destdir="${class.dir}" debug="true" verbose="false" source="1.8" target="1.8">
+		<javac encoding="UTF-8" includeantruntime="false" srcdir="${src.dir}" destdir="${class.dir}" debug="true" verbose="false" source="1.8" target="1.8">
 			<!-- compilerarg value="-Xlint:deprecation"/-->
 			<classpath refid="project.classpath" />
 			<classpath>
@@ -415,7 +415,7 @@
 	<target name="compile-test">
 		<!-- compile unit tests -->
 		<mkdir dir="${test.class.dir}" />
-		<javac includeantruntime="false" srcdir="${test.dir}" destdir="${test.class.dir}" debug="true" verbose="false" source="1.8" target="1.8">
+		<javac encoding="UTF-8" includeantruntime="false" srcdir="${test.dir}" destdir="${test.class.dir}" debug="true" verbose="false" source="1.8" target="1.8">
 			<classpath refid="project.classpath" />
 			<classpath>
 				<pathelement location="lib/junit-4.12.jar" />
@@ -938,7 +938,7 @@
 	<target name="test-dist-long" unless="test.skip">
 		<!-- compile unit tests -->
 		<mkdir dir="${test.class.dir}" />
-		<javac includeantruntime="false" srcdir="${test.dir}-long" destdir="${test.class.dir}" debug="true" verbose="false">
+		<javac encoding="UTF-8" includeantruntime="false" srcdir="${test.dir}-long" destdir="${test.class.dir}" debug="true" verbose="false">
 			<classpath refid="project.classpath" />
 			<classpath>
 				<pathelement location="lib/junit-4.12.jar" />
@@ -999,7 +999,7 @@
 		<mkdir dir="${test.class.dir}"/>
 		<!-- Compile our boilerplate code needed to verify TLC. E.g. the StateQueueVerify creates -->
 		<!-- examplary produces & consumers and a dummy implementation of StateQueue. -->
-		<javac includeantruntime="false" srcdir="${test.dir}-verify" destdir="${test.class.dir}" debug="true" verbose="false">
+		<javac encoding="UTF-8" includeantruntime="false" srcdir="${test.dir}-verify" destdir="${test.class.dir}" debug="true" verbose="false">
 			<classpath refid="project.classpath" />
 			<classpath>
 				<pathelement path="${class.dir}" />
@@ -1035,7 +1035,7 @@
 		<!-- Compile benchmark class files in test-benchmark against jmh. -->
 		<delete dir="target/benchmark/" />
 		<mkdir dir="target/benchmark/" />
-		<javac includeantruntime="false" srcdir="test-benchmark/" destdir="target/benchmark/">
+		<javac encoding="UTF-8" includeantruntime="false" srcdir="test-benchmark/" destdir="target/benchmark/">
 			<classpath refid="project.classpath" />
 			<classpath>
 				<pathelement path="${class.dir}" />
