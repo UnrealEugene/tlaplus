@@ -26,6 +26,7 @@ import util.UniqueString;
 
 import java.io.*;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -35,13 +36,12 @@ import java.util.stream.IntStream;
 import static tla2sany.semantic.ASTConstants.UserDefinedOpKind;
 
 public class JsonStateWriter extends StateWriter {
+    private final boolean generateGo;
     private final StateGraphPathExtractor stateGraphPathExtractor;
 
-    private static final String STATES = "states";
-    private static final String EXECUTIONS = "executions";
-
-    public JsonStateWriter(String fileName) throws IOException {
+    public JsonStateWriter(String fileName, boolean generateGo) throws IOException {
         super(fileName);
+        this.generateGo = generateGo;
         this.stateGraphPathExtractor = new StateGraphPathExtractor();
     }
 
@@ -95,7 +95,14 @@ public class JsonStateWriter extends StateWriter {
     }
 
     @Override
+    @SuppressWarnings("unchecked")
     public void close() {
+        if (TLCGlobals.mainChecker.getStateQueueSize() != 0) {
+            super.close();
+            new File(getDumpFileName()).deleteOnExit();
+            return;
+        }
+
         Tool tool = (Tool) TLCGlobals.mainChecker.tool;
         Map<Location, UniqueString> actionNames = Arrays.stream(tool.getActions())
                 .collect(Collectors.groupingBy(Action::getDeclaration,
@@ -115,13 +122,28 @@ public class JsonStateWriter extends StateWriter {
         MP.printMessage(EC.GENERAL, "State graph exporting started.");
 
         List<TLCState> states = this.stateGraphPathExtractor.getStates();
-        List<List<StateGraphPathExtractor.Edge>> paths = this.stateGraphPathExtractor.extractPaths();
+        Iterable<List<StateGraphPathExtractor.Edge>> paths = this.stateGraphPathExtractor.extractPaths();
+
+        Vect<Object> constVect = tool.getModelConfig().getConstants();
+        Object[] constArray = new Vect[constVect.size()];
+        constVect.copyInto(constArray);
+        Map<String, Value> constMap = new HashMap<>();
+        for (Object obj : constArray) {
+            Vect<Object> vect = (Vect<Object>) obj;
+            constMap.put((String) vect.elementAt(0), (Value) vect.elementAt(1));
+        }
 
         MP.printMessage(EC.GENERAL, "Model state graph JSON exporting started.");
         try (JsonWriter jsonWriter = new JsonWriter(this.writer)) {
             jsonWriter.beginObject();
 
-            jsonWriter.name(STATES).beginArray();
+            jsonWriter.name("constants").beginObject();
+            for (Map.Entry<String, Value> entry : constMap.entrySet()) {
+                jsonWriter.name(entry.getKey()).jsonValue(serializeValue(entry.getValue()));
+            }
+            jsonWriter.endObject();
+
+            jsonWriter.name("states").beginArray();
             for (TLCState state : states) {
                 jsonWriter.beginObject();
                 Map<UniqueString, IValue> stateVals = state.getVals();
@@ -134,7 +156,9 @@ public class JsonStateWriter extends StateWriter {
             }
             jsonWriter.endArray();
 
-            jsonWriter.name(EXECUTIONS).beginArray();
+            jsonWriter.name("executions").beginObject()
+                    .name("count").value(this.stateGraphPathExtractor.getPathCount())
+                    .name("array").beginArray();
             for (List<StateGraphPathExtractor.Edge> path : paths) {
                 jsonWriter.beginArray();
                 if (!path.isEmpty()) {
@@ -167,7 +191,7 @@ public class JsonStateWriter extends StateWriter {
                 }
                 jsonWriter.endArray();
             }
-            jsonWriter.endArray();
+            jsonWriter.endArray().endObject();
 
             jsonWriter.endObject();
         } catch (IOException e) {
@@ -176,48 +200,51 @@ public class JsonStateWriter extends StateWriter {
 
         MP.printMessage(EC.GENERAL, "Path cover successfully exported into JSON file " + getDumpFileName() + ".");
 
-        TlaVariableTypeExtractor typeExtractor = new TlaVariableTypeExtractor(tool);
-        Map<String, TlaType> typeMap = typeExtractor.extract();
-        if (typeMap == null) {
-            MP.printMessage(EC.GENERAL, "Can't find TypeOK invariant: Go model mapping file can't be generated.");
-        } else {
-            TlaRecordType tlaStateType = new TlaRecordType(typeMap);
+        if (generateGo) {
+            TlaVariableTypeExtractor typeExtractor = new TlaVariableTypeExtractor(tool);
+            Map<String, TlaType> typeMap = typeExtractor.extract();
+            if (typeMap == null) {
+                MP.printMessage(EC.GENERAL, "Can't find TypeOK invariant: Go model mapping file can't be generated.");
+            } else {
+                TlaRecordType tlaStateType = new TlaRecordType(typeMap);
 
-            StringBuilder sb = new StringBuilder();
-            sb.append("package test;");
+                StringBuilder sb = new StringBuilder();
+                sb.append("package test;");
 
-            TlaTypeToGoVisitor visitor = new TlaTypeToGoVisitor();
-            sb.append(visitor.visit(tlaStateType));
+                TlaTypeToGoVisitor visitor = new TlaTypeToGoVisitor();
+                sb.append(visitor.visit(tlaStateType));
 
-            sb.append("type ModelMappingImpl struct{};")
-                    .append("func(m*ModelMappingImpl)Init(){};")
-                    .append("func(m*ModelMappingImpl)Reset(){};")
-                    .append("func(m*ModelMappingImpl)State()ModelState{return ModelState{}};");
+                sb.append("type ModelMappingImpl struct{};")
+                        .append("func(m*ModelMappingImpl)Init(){};")
+                        .append("func(m*ModelMappingImpl)Reset(){};")
+                        .append("func(m*ModelMappingImpl)State()ModelState{return ModelState{}};");
 
-            sb.append("type Action = int;const(");
-            for (UniqueString actionName : actionNames.values()) {
-                sb.append(actionName)
-                        .append(" Action=iota;");
+                sb.append("type Action = int;const(");
+                for (UniqueString actionName : actionNames.values()) {
+                    sb.append(actionName)
+                            .append(" Action=iota;");
+                }
+                sb.append(");");
+
+                sb.append("func(m*ModelMappingImpl)PerformAction(id Action,args[]any){switch id {");
+                for (UniqueString actionName : actionNames.values()) {
+                    sb.append("case ")
+                            .append(actionName)
+                            .append(":break;");
+                }
+                sb.append("}};");
+
+                String goFilename = getDumpFileName().replaceAll(".json$", ".go");
+                try (BufferedWriter goWriter = new BufferedWriter(new OutputStreamWriter(FileUtil.newBFOS(goFilename)))) {
+                    goWriter.write(sb.toString());
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+                MP.printMessage(EC.GENERAL, "Successfully generated Go model mapping file " + goFilename + ".");
             }
-            sb.append(");");
-
-            sb.append("func(m*ModelMappingImpl)PerformAction(id Action,args[]any){switch id {");
-            for (UniqueString actionName : actionNames.values()) {
-                sb.append("case ")
-                        .append(actionName)
-                        .append(":break;");
-            }
-            sb.append("}};");
-
-            String goFilename = getDumpFileName().replaceAll(".json$", ".go");
-            try (BufferedWriter goWriter = new BufferedWriter(new OutputStreamWriter(FileUtil.newBFOS(goFilename)))) {
-                goWriter.write(sb.toString());
-            } catch (IOException e) {
-                throw new UncheckedIOException(e);
-            }
-            MP.printMessage(EC.GENERAL, "Successfully generated Go model mapping file " + goFilename + ".");
         }
 
+        this.stateGraphPathExtractor.cleanup();
         super.close();
     }
 
