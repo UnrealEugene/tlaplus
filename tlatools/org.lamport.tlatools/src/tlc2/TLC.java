@@ -396,12 +396,14 @@ public class TLC {
     {
 		String dumpFile = null;
 		boolean asDot = false;
+        boolean colorize = false;
+        boolean actionLabels = false;
+        boolean snapshot = false;
+        boolean stuttering = false;
+
         boolean asJson = false;
-	    boolean colorize = false;
-	    boolean actionLabels = false;
-		boolean snapshot = false;
-		boolean stuttering = false;
-		
+        boolean generateGo = false;
+
 		boolean generateTESpec = true;
 		boolean generateTESpecBinaryTrace = true;
 		boolean forceGenerateTESpec = false;
@@ -572,15 +574,17 @@ public class TLC {
                 if (((index + 1) < args.length) && args[index].startsWith("dot")) {
                 	final String dotArgs = args[index].toLowerCase();
                 	index++; // consume "dot...".
-                	asDot = true;
-                	colorize = dotArgs.contains("colorize");
-                	actionLabels = dotArgs.contains("actionlabels");
-                	snapshot = dotArgs.contains("snapshot");
-                	stuttering = dotArgs.contains("stuttering");
-					dumpFile = getDumpFile(args[index++], ".dot");
-                } else if (((index + 1) < args.length) && args[index].equals("json")) {
+                    asDot = true;
+                    colorize = dotArgs.contains("colorize");
+                    actionLabels = dotArgs.contains("actionlabels");
+                    snapshot = dotArgs.contains("snapshot");
+                    stuttering = dotArgs.contains("stuttering");
+                    dumpFile = getDumpFile(args[index++], ".dot");
+                } else if (((index + 1) < args.length) && args[index].startsWith("json")) {
+                    final String jsonArgs = args[index].toLowerCase();
                     index++;
                     asJson = true;
+                    generateGo = jsonArgs.contains("go");
                     dumpFile = getDumpFile(args[index++], ".json");
                 } else if (index < args.length) {
 					dumpFile = getDumpFile(args[index++], ".dump");
@@ -1088,7 +1092,7 @@ public class TLC {
 			}
 			try {
 				if (asJson) {
-                    this.stateWriter = new JsonStateWriter(dumpFile);
+                    this.stateWriter = new JsonStateWriter(dumpFile, generateGo);
                 } else if (asDot) {
                     this.stateWriter = new DotStateWriter(dumpFile, colorize, actionLabels, snapshot, stuttering);
                 } else {
