@@ -146,9 +146,9 @@ public class StateGraphPathExtractor {
         return distance.get(getSink()) != INF;
     }
 
-    private boolean dinicDfs(int v) {
+    private int dinicDfs(int v, int flow) {
         if (v == getSink()) {
-            return true;
+            return flow;
         }
         for (; adjListPt.get(v) < adjList.get(v).size(); adjListPt.set(v, adjListPt.get(v) + 1)) {
             int eId = adjList.get(v).get(adjListPt.get(v));
@@ -156,23 +156,24 @@ public class StateGraphPathExtractor {
             NetworkEdge bck = edges.get(eId ^ 1);
             int to = fwd.to;
 
-            if (distance.get(to) == distance.get(v) + 1 && fwd.capacity - fwd.flow > 0) {
-                boolean pushed = dinicDfs(to);
-                if (pushed) {
-                    fwd.flow += 1;
-                    bck.flow -= 1;
-                    return true;
+            int cap = fwd.capacity - fwd.flow;
+            if (distance.get(to) == distance.get(v) + 1 && cap > 0) {
+                int df = dinicDfs(to, Math.min(flow, cap));
+                if (df > 0) {
+                    fwd.flow += df;
+                    bck.flow -= df;
+                    return df;
                 }
             }
         }
-        return false;
+        return 0;
     }
 
     private void findMaxFlow() {
         while (dinicBfs()) {
             Collections.fill(adjListPt, 0);
             while (true) {
-                if (!dinicDfs(getSource())) {
+                if (dinicDfs(getSource(), INF) == 0) {
                     break;
                 }
             }
