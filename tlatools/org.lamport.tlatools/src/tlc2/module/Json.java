@@ -31,17 +31,18 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
-import com.google.gson.JsonPrimitive;
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONObject;
 
+import com.google.gson.JsonPrimitive;
 import tlc2.overrides.TLAPlusOperator;
 import tlc2.value.IValue;
 import tlc2.value.impl.BoolValue;
@@ -117,7 +118,7 @@ public class Json {
       	// see https://github.com/ndjson/ndjson-spec#32-parsing
       	line = line.trim();
       	if (!"".equals(line)) {
-      		JsonElement node = JsonParser.parseString(line);
+      		Object node = JSON.parse(line);
       		values.add(getValue(node));
       	}
         line = reader.readLine();
@@ -134,7 +135,7 @@ public class Json {
    */
   @TLAPlusOperator(identifier = "JsonDeserialize", module = "Json", warn = false)
   public static IValue deserialize(final StringValue path) throws IOException {
-    JsonElement node = JsonParser.parseReader(new FileReader(new File(path.val.toString())));
+    Object node = JSON.parse(Files.readString(Path.of(path.val.toString())));
     return getValue(node);
   }
 
@@ -142,7 +143,7 @@ public class Json {
    * Serializes a tuple of values to newline delimited JSON.
    *
    * @param path  the file to which to write the values
-   * @param value the values to write
+   * @param v the values to write
    * @return a boolean value indicating whether the serialization was successful
    */
   @TLAPlusOperator(identifier = "ndJsonSerialize", module = "Json", warn = false)
@@ -162,7 +163,7 @@ public class Json {
    * Serializes a tuple of values to newline delimited JSON.
    *
    * @param path  the file to which to write the values
-   * @param value the values to write
+   * @param v the values to write
    * @return a boolean value indicating whether the serialization was successful
    */
   @TLAPlusOperator(identifier = "JsonSerialize", module = "Json", warn = false)
@@ -190,19 +191,19 @@ public class Json {
    * @param value the value to convert
    * @return the converted {@code JsonElement}
    */
-  private static JsonElement getNode(IValue value) throws IOException {
+  public static Object getNode(IValue value) throws IOException {
     if (value instanceof RecordValue) {
       return getObjectNode((RecordValue) value);
     } else if (value instanceof TupleValue) {
       return getArrayNode((TupleValue) value);
     } else if (value instanceof StringValue) {
-      return new JsonPrimitive(((StringValue) value).val.toString());
+      return ((StringValue) value).val.toString();
     } else if (value instanceof ModelValue) {
-      return new JsonPrimitive(((ModelValue) value).val.toString());
+      return ((ModelValue) value).val.toString();
     } else if (value instanceof IntValue) {
-      return new JsonPrimitive(((IntValue) value).val);
+      return ((IntValue) value).val;
     } else if (value instanceof BoolValue) {
-      return new JsonPrimitive(((BoolValue) value).val);
+      return ((BoolValue) value).val;
     } else if (value instanceof FcnRcdValue) {
       return getObjectNode((FcnRcdValue) value);
     } else if (value instanceof FcnLambdaValue) {
@@ -253,7 +254,7 @@ public class Json {
    * @param value the value to convert
    * @return the converted {@code JsonElement}
    */
-  private static JsonElement getObjectNode(IValue value) throws IOException {
+  private static Object getObjectNode(IValue value) throws IOException {
     if (value instanceof RecordValue) {
       return getObjectNode((RecordValue) value);
     } else if (value instanceof TupleValue) {
@@ -273,19 +274,19 @@ public class Json {
    * @param value the value to convert
    * @return the converted {@code JsonElement}
    */
-  private static JsonElement getObjectNode(FcnRcdValue value) throws IOException {
+  private static Object getObjectNode(FcnRcdValue value) throws IOException {
     if (isValidSequence(value)) {
       return getArrayNode(value);
     }
 
     final Value[] domain = value.getDomainAsValues();
-    JsonObject jsonObject = new JsonObject();
+    JSONObject jsonObject = new JSONObject();
     for (int i = 0; i < domain.length; i++) {
       Value domainValue = domain[i];
       if (domainValue instanceof StringValue) {
-        jsonObject.add(((StringValue) domainValue).val.toString(), getNode(value.values[i]));
+        jsonObject.put(((StringValue) domainValue).val.toString(), getNode(value.values[i]));
       } else {
-        jsonObject.add(domainValue.toString(), getNode(value.values[i]));
+        jsonObject.put(domainValue.toString(), getNode(value.values[i]));
       }
     }
     return jsonObject;
@@ -297,10 +298,10 @@ public class Json {
    * @param value the value to convert
    * @return the converted {@code JsonElement}
    */
-  private static JsonElement getObjectNode(RecordValue value) throws IOException {
-    JsonObject jsonObject = new JsonObject();
+  private static Object getObjectNode(RecordValue value) throws IOException {
+    JSONObject jsonObject = new JSONObject();
     for (int i = 0; i < value.names.length; i++) {
-      jsonObject.add(value.names[i].toString(), getNode(value.values[i]));
+      jsonObject.put(value.names[i].toString(), getNode(value.values[i]));
     }
     return jsonObject;
   }
@@ -311,10 +312,10 @@ public class Json {
    * @param value the value to convert
    * @return the converted {@code JsonElement}
    */
-  private static JsonElement getObjectNode(TupleValue value) throws IOException {
-    JsonObject jsonObject = new JsonObject();
+  private static Object getObjectNode(TupleValue value) throws IOException {
+    JSONObject jsonObject = new JSONObject();
     for (int i = 0; i < value.elems.length; i++) {
-      jsonObject.add(String.valueOf(i), getNode(value.elems[i]));
+      jsonObject.put(String.valueOf(i), getNode(value.elems[i]));
     }
     return jsonObject;
   }
@@ -325,7 +326,7 @@ public class Json {
    * @param value the value to convert
    * @return the converted {@code JsonElement}
    */
-  private static JsonElement getArrayNode(IValue value) throws IOException {
+  private static Object getArrayNode(IValue value) throws IOException {
     if (value instanceof TupleValue) {
       return getArrayNode((TupleValue) value);
     } else if (value instanceof FcnRcdValue) {
@@ -355,8 +356,8 @@ public class Json {
    * @param value the value to convert
    * @return the converted {@code JsonElement}
    */
-  private static JsonElement getArrayNode(TupleValue value) throws IOException {
-    JsonArray jsonArray = new JsonArray(value.elems.length);
+  private static Object getArrayNode(TupleValue value) throws IOException {
+    JSONArray jsonArray = new JSONArray(value.elems.length);
     for (int i = 0; i < value.elems.length; i++) {
       jsonArray.add(getNode(value.elems[i]));
     }
@@ -369,13 +370,13 @@ public class Json {
    * @param value the value to convert
    * @return the converted {@code JsonElement}
    */
-  private static JsonElement getArrayNode(FcnRcdValue value) throws IOException {
+  private static Object getArrayNode(FcnRcdValue value) throws IOException {
     if (!isValidSequence(value)) {
       return getObjectNode(value);
     }
 
     value.normalize();
-    JsonArray jsonArray = new JsonArray(value.values.length);
+    JSONArray jsonArray = new JSONArray(value.values.length);
     for (int i = 0; i < value.values.length; i++) {
       jsonArray.add(getNode(value.values[i]));
     }
@@ -388,10 +389,10 @@ public class Json {
    * @param value the value to convert
    * @return the converted {@code JsonElement}
    */
-  private static JsonElement getArrayNode(SetEnumValue value) throws IOException {
+  private static Object getArrayNode(SetEnumValue value) throws IOException {
     value.normalize();
     Value[] values = value.elems.toArray();
-    JsonArray jsonArray = new JsonArray(values.length);
+    JSONArray jsonArray = new JSONArray(values.length);
     for (int i = 0; i < values.length; i++) {
       jsonArray.add(getNode(values[i]));
     }
@@ -404,26 +405,23 @@ public class Json {
    * @param node the {@code JsonElement} to convert
    * @return the converted value
    */
-  private static Value getValue(JsonElement node) throws IOException {
-    if (node.isJsonArray()) {
+  private static Value getValue(Object node) throws IOException {
+    if (node instanceof JSONArray) {
       return getTupleValue(node);
     }
-    else if (node.isJsonObject()) {
+    else if (node instanceof JSONObject) {
       return getRecordValue(node);
     }
-    else if (node.isJsonPrimitive()) {
-      JsonPrimitive primitive = node.getAsJsonPrimitive();
-      if (primitive.isNumber()) {
-        return IntValue.gen(primitive.getAsInt());
-      }
-      else if (primitive.isBoolean()) {
-        return new BoolValue(primitive.getAsBoolean());
-      }
-      else if (primitive.isString()) {
-        return new StringValue(primitive.getAsString());
-      }
+    else if (node instanceof Integer) {
+      return IntValue.gen((int) node);
     }
-    else if (node.isJsonNull()) {
+    else if (node instanceof Boolean) {
+      return new BoolValue((boolean) node);
+    }
+    else if (node instanceof String) {
+      return new StringValue((String) node);
+    }
+    else if (node == null) {
       return null;
     }
     throw new IOException("Cannot convert value: unsupported JSON value " + node.toString());
@@ -435,9 +433,9 @@ public class Json {
    * @param node the {@code JsonElement} to convert
    * @return the tuple value
    */
-  private static TupleValue getTupleValue(JsonElement node) throws IOException {
+  private static TupleValue getTupleValue(Object node) throws IOException {
     List<Value> values = new ArrayList<>();
-    JsonArray jsonArray = node.getAsJsonArray();
+    JSONArray jsonArray = (JSONArray) node;
     for (int i = 0; i < jsonArray.size(); i++) {
       values.add(getValue(jsonArray.get(i)));
     }
@@ -450,12 +448,12 @@ public class Json {
    * @param node the {@code JsonElement} to convert
    * @return the record value
    */
-  private static RecordValue getRecordValue(JsonElement node) throws IOException {
+  private static RecordValue getRecordValue(Object node) throws IOException {
     List<UniqueString> keys = new ArrayList<>();
     List<Value> values = new ArrayList<>();
-    Iterator<Map.Entry<String, JsonElement>> iterator = node.getAsJsonObject().entrySet().iterator();
+    Iterator<Map.Entry<String, Object>> iterator = ((JSONObject) node).entrySet().iterator();
     while (iterator.hasNext()) {
-      Map.Entry<String, JsonElement> entry = iterator.next();
+      Map.Entry<String, Object> entry = iterator.next();
       keys.add(UniqueString.uniqueStringOf(entry.getKey()));
       values.add(getValue(entry.getValue()));
     }
