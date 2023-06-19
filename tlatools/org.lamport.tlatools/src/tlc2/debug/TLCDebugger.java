@@ -168,7 +168,7 @@ public abstract class TLCDebugger extends AbstractDebugger implements IDebugTarg
 		// TODO: Log points and conditional (expression-based) breakpoints require to
 		// parse TLA+ expressions after the spec has been parsed, which is not supported
 		// by SANY.
-		capabilities.setSupportsConditionalBreakpoints(false);
+		capabilities.setSupportsConditionalBreakpoints(true);
 		capabilities.setSupportsLogPoints(false);
 		// TODO: Implement stepping back for model-checking and simulation/generation.
 		// Stepping back would be hugely useful especially because TLC's evaluation behavior might be 
@@ -254,7 +254,7 @@ public abstract class TLCDebugger extends AbstractDebugger implements IDebugTarg
 
 		if (TLCGlobals.mainChecker != null) {
 			// Halting on violations/invariants does not work with exhaustive search.
-			// See the following two git commit for why:
+			// See the following two git commits to find out why:
 			// e81e1e2b19b7a03f74d245cac009e84a0415e45d
 			// 42f251546ce99c19f1a7a44310816527a15ade2b
 			return new ExceptionBreakpointsFilter[] { filter };
@@ -437,6 +437,17 @@ public abstract class TLCDebugger extends AbstractDebugger implements IDebugTarg
 					// see tlc2.debug.TLCStepActionStackFrame.matches(TLCSourceBreakpoint)
 					breakpoint.setVerified(false);
 					breakpoint.setMessage("A Next breakpoint does not support a hit condition.");
+				}
+				
+				if (sbp.getCondition() != null && !sbp.getCondition().isEmpty()) {
+					// see tlc2.debug.TLCStateStackFrame.matches(TLCSourceBreakpoint)
+					final OpDefNode odn = moduleNode.getOpDef(sbp.getCondition());
+					if (odn == null) {
+						breakpoint.setVerified(false);
+						breakpoint.setMessage(String.format(
+								"The  %s  definition, used as the breakpoint expression, could not be found in the specification  %s.",
+								sbp.getCondition(), module));
+					}
 				}
 				
 				final Source source = args.getSource();
@@ -1001,7 +1012,7 @@ public abstract class TLCDebugger extends AbstractDebugger implements IDebugTarg
 		// i.e. best match for the given editor location.  The code here should then
 		// simple compare the two location instances.
 		// If no breakpoints are set, stream over an empty list.
-		return breakpoints.getOrDefault(frame.getNode().getLocation().source(), new ArrayList<>()).stream()
+		return breakpoints.getOrDefault(frame.getNode().getLocation().source(), new ArrayList<>(0)).stream()
 				.anyMatch(b -> {
 					return frame.matches(b);
 				});

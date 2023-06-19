@@ -117,6 +117,24 @@ public abstract class Tool
     implements ValueConstants, ToolGlobals, ITool
 {
 
+	/*
+	 * LL: It's probably a good thing that TLC doesn't implement [\cdot] because it
+	 * describes the semicolon in programming languages, and it might encourage
+	 * users to write actions as if they were writing pieces of a program rather
+	 * than formulas. \cdot is weird for the same reason that ENABLED is, because in
+	 * A \cdot B, the primed variables of A and the unprimed variables of B are
+	 * actually (the same) bound variables. This means that substitution doesn't
+	 * distribute over it. Semicolon of programming languages has the same problem,
+	 * and it would complicate showing that one program implements another except
+	 * TLA is the only formalism in which you can say that one program implements
+	 * another.
+	 * 
+	 * Reduction in TLA (with Ernie Cohen) CONCUR'98 Concurrency Theory, David
+	 * Sangiorgi and Robert de Simone editors. Lecture Notes in Computer Science,
+	 * number 1466, (1998), 317-331.
+	 */
+	public static final String CDOT_KEY = Tool.class.getName() + ".cdot";
+	
   	public static final String PROBABILISTIC_KEY = Tool.class.getName() + ".probabilistic";
     /*
 	 * Prototype, do *not* activate when checking safety or liveness!!!:
@@ -1394,18 +1412,40 @@ public abstract class Tool
 	  }
 	case OPCODE_cdot:
 	  {
-	    Assert.fail("The current version of TLC does not support action composition.", pred, c);
-	    /***
-	    TLCState s01 = TLCStateFun.Empty;
-	    StateVec iss = new StateVec(0);
-	    this.getNextStates(action, args[0], ActionItemList.Empty, c, s0, s01, iss);
-	    int sz = iss.size();
-	    for (int i = 0; i < sz; i++) {
-	      s01 = iss.elementAt(i);
-	      this.getNextStates(action, args[1], acts, c, s01, s1, nss);
-	    }
-	    ***/
-	    return s1;
+			if (Boolean.getBoolean(CDOT_KEY)) {
+// This assertion test is insufficient to prevent the inadvertent activation of the experimental cdot feature within substitution,
+// such as refinement mapping, as the context could be an ordinary context like quantification.
+//				Assert.check(c.isEmpty(),
+//						"The current version of TLC only supports basic action composition involving no substitution/instantiation.",
+//						pred, c);
+				
+				// next-state relation:
+				// s -(A \cdot B)-> u  <=>  s -A-> t -B-> u
+				TLCState t = s0.copyWith(s1);
+				
+				// s -A-> t
+				final StateVec iss = new StateVec(0);
+				this.getNextStates(action, args[0], acts, c, s0, t, iss, cm);
+				
+				// t -B-> u
+				int sz = iss.size();
+				for (int i = 0; i < sz; i++) {
+					TLCState u = s1.copy();
+					t = iss.elementAt(i);
+					final StateVec iss2 = new StateVec(0);
+					this.getNextStates(action, args[1], acts, c, t, u, iss2, cm);
+
+					// s -(A \cdot B)-> u 
+					for (int j = 0; j < iss2.size(); j++) {
+						u = iss2.elementAt(j);
+						nss.addElement(s0, action, u);
+					}
+				}
+				return resState;
+			} else {
+				Assert.fail("The current version of TLC does not support action composition.", pred, c);
+				return s1;
+			}
 	  }
 	// The following case added by LL on 13 Nov 2009 to handle subexpression names.
 	case OPCODE_nop:
@@ -2624,8 +2664,8 @@ public abstract class Tool
         	  // MAK 03/2019:  Cannot reproduce this but without this check the nested evaluation
         	  // fails with a NullPointerException which subsequently is swallowed. This makes it 
         	  // impossible for a user to diagnose what is going on.  Since I cannot reproduce the
-        	  // actual expression, I leave this commented for.  I recall an expression along the
-        	  // lines of:
+        	  // actual expression, I leave this commented for posterity.  I recall an expression
+        	  // along the lines of:
         	  //    ...
         	  //    TLCSet(23, CHOOSE p \in pc: pc[p] # pc[p]')
         	  //    ...
@@ -2673,19 +2713,45 @@ public abstract class Tool
           }
         case OPCODE_cdot:
           {
-            Assert.fail("The current version of TLC does not support action composition.", expr, c);
-            /***
-            TLCState s01 = TLCStateFun.Empty;
-            StateVec iss = new StateVec(0);
-            this.getNextStates(args[0], ActionItemList.Empty, c, s0, s01, iss);
-            int sz = iss.size();
-            for (int i = 0; i < sz; i++) {
-              s01 = iss.elementAt(i);
-              this.eval(args[1], c, s01, s1, control);
-            }
-            ***/
-            return null;    // make compiler happy
-          }
+				if (Boolean.getBoolean(CDOT_KEY)) {
+					// Properties:
+					// s -(A \cdot B)-> u  <=>  s -A-> t -B-> u
+
+					// Let A and B be two sub-actions of the next-state relation, and let v and c be
+					// two variables such that c appears in either A or B, while v does not appear
+					// in both A and B. We cannot infer the value of variable v at state t from the
+					// initial state s0 and the *partial* state s1, unlike the handling of \cdot in
+					// the evaluation of the next-state relation as previously discussed, because s1
+					// is no longer partial. However, this is not a concern because the variable v
+					// will be addressed elsewhere, given that it does not appear in both A and B,
+					// and therefore, in the composed A \cdot B.
+					TLCState t = TLCState.Empty.createEmpty();  // not t = s0.copyWith(s1); !
+					
+					// s -A-> t
+					final StateVec iss = new StateVec(0);
+					this.getNextStates(Action.UNKNOWN, args[0], ActionItemList.Empty, c, s0, t, iss, cm);
+					
+					// t -B-> u
+					int sz = iss.size();
+					for (int i = 0; i < sz; i++) {
+						t = iss.elementAt(i);
+						
+						Value res = this.eval(args[0], c, s0, t, control, cm);
+						if (!((BoolValue) res).val) {
+							continue;
+						}
+						
+						res = this.eval(args[1], c, t, s1, control, cm);
+						if (((BoolValue) res).val) {
+							return BoolValue.ValTrue;
+						}
+					}
+					return BoolValue.ValFalse;
+				} else {
+					Assert.fail("The current version of TLC does not support action composition.", expr, c);
+					return null; // make compiler happy
+				}
+	          }
         case OPCODE_sf:     // SF
           {
             Assert.fail(EC.TLC_ENCOUNTERED_FORMULA_IN_PREDICATE, new String[]{"SF", expr.toString()}, expr, c);
@@ -3232,20 +3298,26 @@ public abstract class Tool
           }
         case OPCODE_cdot:
           {
-            Assert.fail("The current version of TLC does not support action composition.", pred, c);
-            /***
-            TLCState s01 = TLCStateFun.Empty;
-            StateVec iss = new StateVec(0);
-            this.getNextStates(args[0], ActionItemList.Empty, c, s0, s01, iss);
-            int sz = iss.size();
-            for (int i = 0; i < sz; i++) {
-              s01 = iss.elementAt(i);
-              TLCState s2 = this.enabled(args[1], acts, c, s01, s1);
-              if (s2 != null) return s2;
-            }
-            ***/
-            return null; // make compiler happy
-          }
+				if (Boolean.getBoolean(CDOT_KEY)) {
+					// ENABLED:
+					// s -(A \cdot B)-> u  <=>  s -A-> t -B-> u
+					TLCState t = s0.copyWith(s1);
+					final StateVec iss = new StateVec(0);
+					this.getNextStates(Action.UNKNOWN, args[0], ActionItemList.Empty, c, s0, t, iss, cm);
+					final int sz = iss.size();
+					for (int i = 0; i < sz; i++) {
+						t = iss.elementAt(i);
+						final TLCState s2 = this.enabled(args[1], acts, c, t, s1, cm);
+						if (s2 != null) {
+							return s2;
+						}
+					}
+					return null;
+				} else {
+					Assert.fail("The current version of TLC does not support action composition.", pred, c);
+					return null; // make compiler happy
+				}
+	          }
         case OPCODE_leadto:
           {
             Assert.fail("In computing ENABLED, TLC encountered a temporal formula" + " (a ~> b).\n" + pred, pred, c);
