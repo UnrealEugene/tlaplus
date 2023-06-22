@@ -6,7 +6,7 @@ import tla2sany.semantic.FormalParamNode;
 import tla2sany.semantic.OpApplNode;
 import tla2sany.st.Location;
 import tlc2.TLCGlobals;
-import tlc2.diploma.StateGraphPathExtractor;
+import tlc2.diploma.graph.StateGraphPathExtractor;
 import tlc2.diploma.TlaTypeToGoVisitor;
 import tlc2.diploma.TlaVariableTypeExtractor;
 import tlc2.diploma.model.TlaRecordType;
