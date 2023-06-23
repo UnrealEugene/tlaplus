@@ -6,9 +6,9 @@ import tla2sany.semantic.FormalParamNode;
 import tla2sany.semantic.OpApplNode;
 import tla2sany.st.Location;
 import tlc2.TLCGlobals;
-import tlc2.diploma.graph.StateGraphPathExtractor;
 import tlc2.diploma.TlaTypeToGoVisitor;
 import tlc2.diploma.TlaVariableTypeExtractor;
+import tlc2.diploma.graph.StateGraphPathExtractor;
 import tlc2.diploma.model.TlaRecordType;
 import tlc2.diploma.model.TlaType;
 import tlc2.module.Json;
@@ -24,33 +24,47 @@ import tlc2.value.impl.Value;
 import util.FileUtil;
 import util.UniqueString;
 
-import java.io.*;
-import java.util.*;
+import java.io.BufferedWriter;
+import java.io.IOException;
+import java.io.OutputStreamWriter;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.text.DecimalFormat;
+import java.text.SimpleDateFormat;
 import java.util.List;
+import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import static tla2sany.semantic.ASTConstants.UserDefinedOpKind;
 
-public class JsonStateWriter extends StateWriter {
+public class JsonStateWriter implements IStateWriter {
+    private static final SimpleDateFormat SDF = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss z");
+
+    private final Path dir;
     private final boolean generateGo;
     private final StateGraphPathExtractor stateGraphPathExtractor;
 
-    public JsonStateWriter(String fileName, boolean generateGo) throws IOException {
-        super(fileName);
+    public JsonStateWriter(String dir, boolean generateGo) throws IOException {
+        this.dir = Path.of(dir);
         this.generateGo = generateGo;
         this.stateGraphPathExtractor = new StateGraphPathExtractor();
     }
 
-    private Object serializeValue(Object value) throws IOException {
+    private Object serializeValue(Object value) {
         if (value == null) {
             return null;
         }
         if (!(value instanceof Value)) {
             value = new StringValue(value.toString());
         }
-        return Json.getNode((Value) value);
+        try {
+            return Json.getNode((Value) value);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     private void addEdge(TLCState from, TLCState to, Action action) {
@@ -79,6 +93,11 @@ public class JsonStateWriter extends StateWriter {
         writeState(state, successor, actionChecks, from, length, successorStateIsNew, Visualization.DEFAULT, null);
     }
 
+    @Override
+    public void writeState(TLCState state, TLCState successor, BitVector actionChecks, int from, int length, boolean successorStateIsNew, Visualization visualization) {
+        writeState(state, successor, actionChecks, from, length, successorStateIsNew, visualization, null);
+    }
+
     private void writeState(TLCState state, TLCState successor, BitVector ignoredActionChecks, int ignoredFrom, int ignoredLength,
                             boolean ignoredSuccessorStateIsNew, Visualization visualization, Action action) {
         if (visualization == Visualization.STUTTERING) {
@@ -93,11 +112,26 @@ public class JsonStateWriter extends StateWriter {
     }
 
     @Override
+    public boolean isDot() {
+        return false;
+    }
+
+    private String now() {
+        return SDF.format(new Date());
+    }
+
+    private String formatBytes(long bytes) {
+        String[] units = new String[] { "bytes", "KiB", "MiB", "GiB", "TiB" };
+        int unitIndex = (int) (Math.log10(bytes) / 3);
+        double unitValue = 1L << (unitIndex * 10);
+        return new DecimalFormat("#,##0.#")
+                .format(bytes / unitValue) + " " + units[unitIndex];
+    }
+
+    @Override
     @SuppressWarnings("unchecked")
     public void close() {
         if (TLCGlobals.mainChecker.getStateQueueSize() != 0) {
-            super.close();
-            new File(getDumpFileName()).deleteOnExit();
             return;
         }
 
@@ -117,8 +151,6 @@ public class JsonStateWriter extends StateWriter {
                 .boxed()
                 .collect(Collectors.toMap(actionLocations::get, Function.identity()));
 
-        MP.printMessage(EC.GENERAL, "State graph exporting started.");
-
         List<TLCState> states = this.stateGraphPathExtractor.getStates();
         Iterable<List<StateGraphPathExtractor.Edge>> paths = this.stateGraphPathExtractor.extractPaths();
 
@@ -131,11 +163,163 @@ public class JsonStateWriter extends StateWriter {
             constMap.put((String) vect.elementAt(0), (Value) vect.elementAt(1));
         }
 
-        MP.printMessage(EC.GENERAL, "Model state graph JSON exporting started.");
-        try (JSONWriter jsonWriter = JSONWriter.ofUTF8()) {
+        MP.printMessage(EC.GENERAL, "Path cover JSON exporting started.");
+
+        Path metaFile = this.dir.resolve("meta.json");
+        try {
+            Files.deleteIfExists(metaFile);
+        } catch (IOException ignored) { }
+
+        int threads = TLCGlobals.getNumWorkers();
+        long exportedSize = 0;
+
+        // write states
+        Path stateDir = this.dir.resolve("states");
+        try {
+            Files.createDirectories(stateDir);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+
+        List<String> stateFiles = new ArrayList<>();
+        int stateFilesCount = Math.min(states.size(), threads);
+        for (int i = 0, l = 0; i < stateFilesCount; i++) {
+            int div = states.size() / stateFilesCount, mod = states.size() % stateFilesCount;
+            int r = l + div + (i < mod ? 1 : 0);
+
+            String stateFileName = String.format("%03d.json", i + 1);
+            Path stateFile = stateDir.resolve(stateFileName);
+
+            stateFiles.add(this.dir.relativize(stateFile).toString());
+
+            try (BufferedWriter writer = Files.newBufferedWriter(stateFile);
+                 JSONWriter jsonWriter = JSONWriter.ofUTF8()) {
+                jsonWriter.startArray();
+                for (int j = l; j < r; j++) {
+                    if (j > l) {
+                        jsonWriter.writeComma();
+                    }
+                    jsonWriter.startObject();
+                    Map<UniqueString, IValue> stateVals = states.get(j).getVals();
+                    for (Map.Entry<UniqueString, IValue> entry : stateVals.entrySet()) {
+                        jsonWriter.writeName(entry.getKey().toString());
+                        jsonWriter.writeColon();
+                        jsonWriter.writeAny(serializeValue(entry.getValue()));
+                    }
+                    jsonWriter.endObject();
+                    jsonWriter.flushTo(writer);
+                }
+                jsonWriter.endArray();
+                jsonWriter.flushTo(writer);
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+
+            exportedSize += stateFile.toFile().length();
+
+            l = r;
+        }
+
+        int pathCount = this.stateGraphPathExtractor.getPathCount();
+
+        // write executions
+        Path execDir = this.dir.resolve("executions");
+        try {
+            Files.createDirectories(execDir);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+
+        List<String> execFiles = new ArrayList<>();
+        int execFilesCount = Math.min(pathCount, threads);
+        Iterator<List<StateGraphPathExtractor.Edge>> pathIterator = paths.iterator();
+        for (int i = 0, l = 0; i < execFilesCount; i++) {
+            int div = pathCount / execFilesCount, mod = pathCount % execFilesCount;
+            int r = l + div + (i < mod ? 1 : 0);
+
+            String execFileName = String.format("%03d.json", i + 1);
+            Path execFile = execDir.resolve(execFileName);
+            execFiles.add(this.dir.relativize(execFile).toString());
+
+            try (BufferedWriter writer = Files.newBufferedWriter(execFile);
+                 JSONWriter jsonWriter = JSONWriter.ofUTF8()) {
+                jsonWriter.startArray();
+                for (int j = l; j < r; j++) {
+                    if (j > l) {
+                        jsonWriter.writeComma();
+                    }
+                    List<StateGraphPathExtractor.Edge> path = pathIterator.next();
+                    jsonWriter.startArray();
+                    if (!path.isEmpty()) {
+                        jsonWriter.writeInt32(path.get(0).getFrom());
+                    }
+                    for (StateGraphPathExtractor.Edge edge : path) {
+                        jsonWriter.writeComma();
+
+                        jsonWriter.startArray();
+
+                        Action action = edge.getAction();
+                        int actionId = locToId.get(action.getDeclaration());
+                        jsonWriter.writeInt32(actionId);
+                        jsonWriter.writeComma();
+
+                        OpApplNode opApplNode = (OpApplNode) action.pred;
+                        if (opApplNode.getOperator().getKind() == UserDefinedOpKind) {
+                            ExprOrOpArgNode[] args = opApplNode.getArgs();
+                            for (int k = 0; k < args.length; k++) {
+                                if (k > 0) {
+                                    jsonWriter.writeComma();
+                                }
+                                ExprOrOpArgNode arg = args[k];
+                                Object val = tool.getVal(arg, action.con, false);
+                                if (val instanceof LazyValue) {
+                                    val = ((LazyValue) val).eval(tool, states.get(edge.getFrom()), states.get(edge.getTo()));
+                                }
+                                jsonWriter.writeAny(serializeValue(val));
+                            }
+                        } else {
+                            FormalParamNode[] params = action.getOpDef().getParams();
+                            for (int k = 0; k < params.length; k++) {
+                                if (k > 0) {
+                                    jsonWriter.writeComma();
+                                }
+                                FormalParamNode param = params[k];
+                                jsonWriter.writeAny(serializeValue(tool.lookup(param, action.con, false)));
+                            }
+                        }
+
+                        jsonWriter.endArray();
+                        jsonWriter.writeComma();
+                        jsonWriter.writeInt32(edge.getTo());
+                    }
+                    jsonWriter.endArray();
+                }
+                jsonWriter.endArray();
+                jsonWriter.flushTo(writer);
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+
+            exportedSize += execFile.toFile().length();
+
+            l = r;
+        }
+
+        // write meta file
+        try (BufferedWriter writer = Files.newBufferedWriter(metaFile);
+             JSONWriter jsonWriter = JSONWriter.ofUTF8()) {
             jsonWriter.startObject();
 
-            jsonWriter.writeName("constants");
+            jsonWriter.writeName("start_time");
+            jsonWriter.writeColon();
+            jsonWriter.writeString(now());
+
+            jsonWriter.writeName("tla_module");
+            jsonWriter.writeColon();
+            String rootFile = TLCGlobals.mainChecker.tool.getRootFile();
+            jsonWriter.writeString(Path.of(rootFile).getFileName().toString().replaceAll(".tla$", ""));
+
+            jsonWriter.writeName("tla_constants");
             jsonWriter.writeColon();
             jsonWriter.startObject();
             for (Map.Entry<String, Value> entry : constMap.entrySet()) {
@@ -145,98 +329,32 @@ public class JsonStateWriter extends StateWriter {
             }
             jsonWriter.endObject();
 
-            jsonWriter.writeName("states");
+            jsonWriter.writeName("state_count");
             jsonWriter.writeColon();
-            jsonWriter.startArray();
-            for (Iterator<TLCState> iterator = states.iterator(); iterator.hasNext(); ) {
-                TLCState state = iterator.next();
-                jsonWriter.startObject();
-                Map<UniqueString, IValue> stateVals = state.getVals();
-                for (Map.Entry<UniqueString, IValue> entry : stateVals.entrySet()) {
-                    jsonWriter.writeName(entry.getKey().toString());
-                    jsonWriter.writeColon();
-                    jsonWriter.writeAny(serializeValue(entry.getValue()));
-                }
-                jsonWriter.endObject();
-                jsonWriter.flushTo(this.writer);
-                if (iterator.hasNext()) {
-                    jsonWriter.writeComma();
-                }
-            }
-            jsonWriter.endArray();
+            jsonWriter.writeInt32(states.size());
 
-            jsonWriter.writeName("executions");
+            jsonWriter.writeName("state_files");
             jsonWriter.writeColon();
-            jsonWriter.startObject();
+            jsonWriter.writeAny(stateFiles);
 
-            jsonWriter.writeName("count");
+            jsonWriter.writeName("execution_count");
             jsonWriter.writeColon();
-            jsonWriter.writeInt32(this.stateGraphPathExtractor.getPathCount());
-            jsonWriter.writeName("array");
+            jsonWriter.writeInt32(pathCount);
+
+            jsonWriter.writeName("execution_files");
             jsonWriter.writeColon();
-            jsonWriter.startArray();
-            for (Iterator<List<StateGraphPathExtractor.Edge>> iterator = paths.iterator(); iterator.hasNext(); ) {
-                List<StateGraphPathExtractor.Edge> path = iterator.next();
-                jsonWriter.startArray();
-                if (!path.isEmpty()) {
-                    jsonWriter.writeInt32(path.get(0).getFrom());
-                }
-                for (StateGraphPathExtractor.Edge edge : path) {
-                    jsonWriter.writeComma();
-
-                    jsonWriter.startArray();
-
-                    Action action = edge.getAction();
-                    int actionId = locToId.get(action.getDeclaration());
-                    jsonWriter.writeInt32(actionId);
-                    jsonWriter.writeComma();
-
-                    OpApplNode opApplNode = (OpApplNode) action.pred;
-                    if (opApplNode.getOperator().getKind() == UserDefinedOpKind) {
-                        ExprOrOpArgNode[] args = opApplNode.getArgs();
-                        for (int i = 0; i < args.length; i++) {
-                            if (i > 0) {
-                                jsonWriter.writeComma();
-                            }
-                            ExprOrOpArgNode arg = args[i];
-                            Object val = tool.getVal(arg, action.con, false);
-                            if (val instanceof LazyValue) {
-                                val = ((LazyValue) val).eval(tool, states.get(edge.getFrom()), states.get(edge.getTo()));
-                            }
-                            jsonWriter.writeAny(serializeValue(val));
-                        }
-                    } else {
-                        FormalParamNode[] params = action.getOpDef().getParams();
-                        for (int i = 0; i < params.length; i++) {
-                            if (i > 0) {
-                                jsonWriter.writeComma();
-                            }
-                            FormalParamNode param = params[i];
-                            jsonWriter.writeAny(serializeValue(tool.lookup(param, action.con, false)));
-                        }
-                    }
-
-                    jsonWriter.endArray();
-                    jsonWriter.writeComma();
-                    jsonWriter.writeInt32(edge.getTo());
-                }
-                jsonWriter.endArray();
-                jsonWriter.flushTo(this.writer);
-                if (iterator.hasNext()) {
-                    jsonWriter.writeComma();
-                }
-            }
-            jsonWriter.endArray();
-            jsonWriter.endObject();
+            jsonWriter.writeAny(execFiles);
 
             jsonWriter.endObject();
-
-            jsonWriter.flushTo(this.writer);
+            jsonWriter.flushTo(writer);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
 
-        MP.printMessage(EC.GENERAL, "Path cover successfully exported into JSON file " + getDumpFileName() + ".");
+        exportedSize += metaFile.toFile().length();
+
+        MP.printMessage(EC.GENERAL, "Path cover successfully exported ("
+                + formatBytes(exportedSize) + ", " + now() + ").");
 
         if (generateGo) {
             TlaVariableTypeExtractor typeExtractor = new TlaVariableTypeExtractor(tool);
@@ -283,7 +401,11 @@ public class JsonStateWriter extends StateWriter {
         }
 
         this.stateGraphPathExtractor.cleanup();
-        super.close();
+    }
+
+    @Override
+    public String getDumpFileName() {
+        return null;
     }
 
     @Override
