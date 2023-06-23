@@ -11,7 +11,7 @@ import java.text.SimpleDateFormat;
 import java.util.*;
 
 public class StateGraphPathExtractor {
-    private static final SimpleDateFormat SDF = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+    private static final SimpleDateFormat SDF = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss z");
     private static final int INF = Integer.MAX_VALUE;
 
     private final StateNetwork network = new StateNetwork();
@@ -181,6 +181,10 @@ public class StateGraphPathExtractor {
     }
 
     public Iterable<List<Edge>> extractPaths() {
+        MP.printMessage(EC.GENERAL, "Path cover construction started ("
+                + MP.format(network.getNodeCount() - 1) + " states, "
+                + MP.format(network.getEdgeCount() / 2) + " transitions, " + now() + ")");
+
         this.constructNetwork();
 
         boolean graphAcyclic = this.isGraphAcyclic();
@@ -192,7 +196,8 @@ public class StateGraphPathExtractor {
         maxFlowSolver.findMaxFlow();
 
         int pathCount = this.getPathCount();
-        MP.printMessage(EC.GENERAL, "  Found maximum flow in constructed network (" + pathCount + " paths, " + now() + ").");
+        MP.printMessage(EC.GENERAL, "  Constructed initial path cover ("
+                + MP.format(pathCount) + " paths, " + now() + ").");
 
         int depth = 8;
         try {
@@ -205,8 +210,8 @@ public class StateGraphPathExtractor {
 
             int newPathCount = this.getPathCount();
             if (newPathCount < pathCount) {
-                MP.printMessage(EC.GENERAL, "  Found " + (pathCount - newPathCount) + " negative cycles in the flow ("
-                        + newPathCount + " paths, " + now() + ").");
+                MP.printMessage(EC.GENERAL, "  Removed " + MP.format(pathCount - newPathCount)
+                        + " redundant paths (" + MP.format(newPathCount) + " paths, " + now() + ").");
                 pathCount = newPathCount;
             } else {
                 MP.printMessage(EC.GENERAL, "  No negative cycles were found in resulting flow (" + now() + ").");

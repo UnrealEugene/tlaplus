@@ -5,25 +5,6 @@
 
 package tlc2;
 
-import java.io.BufferedWriter;
-import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.nio.file.InvalidPathException;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Random;
-import java.util.TimeZone;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
 import model.InJarFilenameToStream;
 import model.ModelInJar;
 import tlc2.debug.TLCDebugger;
@@ -31,11 +12,7 @@ import tlc2.output.EC;
 import tlc2.output.ErrorTraceMessagePrinterRecorder;
 import tlc2.output.MP;
 import tlc2.output.Messages;
-import tlc2.tool.DFIDModelChecker;
-import tlc2.tool.ITool;
-import tlc2.tool.ModelChecker;
-import tlc2.tool.Simulator;
-import tlc2.tool.SingleThreadedSimulator;
+import tlc2.tool.*;
 import tlc2.tool.fp.FPSet;
 import tlc2.tool.fp.FPSetConfiguration;
 import tlc2.tool.fp.FPSetFactory;
@@ -49,17 +26,20 @@ import tlc2.tool.management.TLCStandardMBean;
 import tlc2.util.*;
 import tlc2.value.RandomEnumerableValues;
 import util.Assert.TLCRuntimeException;
-import util.DebugPrinter;
-import util.ExecutionStatisticsCollector;
-import util.FileUtil;
-import util.FilenameToStream;
-import util.MailSender;
-import util.SimpleFilenameToStream;
-import util.TLAConstants;
-import util.TLCRuntime;
-import util.ToolIO;
-import util.UniqueString;
-import util.UsageGenerator;
+import util.*;
+
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.text.SimpleDateFormat;
+import java.util.List;
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Main TLC starter class.
@@ -586,7 +566,7 @@ public class TLC {
                     index++;
                     asJson = true;
                     generateGo = jsonArgs.contains("go");
-                    dumpFile = getDumpFile(args[index++], ".json");
+                    dumpFile = args[index++];
                 } else if (index < args.length) {
 					dumpFile = getDumpFile(args[index++], ".dump");
                 } else {
