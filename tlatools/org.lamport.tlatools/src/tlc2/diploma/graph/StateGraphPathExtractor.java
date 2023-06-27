@@ -3,7 +3,6 @@ package tlc2.diploma.graph;
 import tlc2.TLCGlobals;
 import tlc2.output.EC;
 import tlc2.output.MP;
-import tlc2.tool.Action;
 import tlc2.tool.ModelChecker;
 import tlc2.tool.TLCState;
 
@@ -21,7 +20,7 @@ public class StateGraphPathExtractor {
         network.tryAddNode(null); // source
     }
 
-    public synchronized void addTransition(TLCState from, TLCState to, Action action) {
+    public synchronized void addTransition(TLCState from, TLCState to, ConcreteAction action) {
         int fromId = network.tryAddNode(from);
         int toId = network.tryAddNode(to);
         network.addEdge(fromId, toId, INF, action);
@@ -274,9 +273,9 @@ public class StateGraphPathExtractor {
     public static class Edge {
         private final int from;
         private final int to;
-        private final Action action;
+        private final ConcreteAction action;
 
-        public Edge(int from, int to, Action action) {
+        public Edge(int from, int to, ConcreteAction action) {
             this.from = from;
             this.to = to;
             this.action = action;
@@ -290,7 +289,7 @@ public class StateGraphPathExtractor {
             return to;
         }
 
-        public Action getAction() {
+        public ConcreteAction getAction() {
             return action;
         }
     }

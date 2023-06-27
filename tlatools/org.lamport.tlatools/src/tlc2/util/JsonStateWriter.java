@@ -1,13 +1,11 @@
 package tlc2.util;
 
 import com.alibaba.fastjson2.JSONWriter;
-import tla2sany.semantic.ExprOrOpArgNode;
-import tla2sany.semantic.FormalParamNode;
-import tla2sany.semantic.OpApplNode;
 import tla2sany.st.Location;
 import tlc2.TLCGlobals;
 import tlc2.diploma.TlaTypeToGoVisitor;
 import tlc2.diploma.TlaVariableTypeExtractor;
+import tlc2.diploma.graph.ConcreteAction;
 import tlc2.diploma.graph.StateGraphPathExtractor;
 import tlc2.diploma.model.TlaRecordType;
 import tlc2.diploma.model.TlaType;
@@ -18,7 +16,6 @@ import tlc2.tool.Action;
 import tlc2.tool.TLCState;
 import tlc2.tool.impl.Tool;
 import tlc2.value.IValue;
-import tlc2.value.impl.LazyValue;
 import tlc2.value.impl.StringValue;
 import tlc2.value.impl.Value;
 import util.FileUtil;
@@ -37,8 +34,6 @@ import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-
-import static tla2sany.semantic.ASTConstants.UserDefinedOpKind;
 
 public class JsonStateWriter implements IStateWriter {
     private static final SimpleDateFormat SDF = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss z");
@@ -69,7 +64,7 @@ public class JsonStateWriter implements IStateWriter {
 
     private void addEdge(TLCState from, TLCState to, Action action) {
         if (from.fingerPrint() != to.fingerPrint()) {
-            this.stateGraphPathExtractor.addTransition(from, to, action);
+            this.stateGraphPathExtractor.addTransition(from, to, ConcreteAction.from(from, to, action));
         }
     }
 
@@ -143,9 +138,12 @@ public class JsonStateWriter implements IStateWriter {
                 .map(Action::getDeclaration)
                 .distinct()
                 .collect(Collectors.toList());
-        MP.printMessage(EC.GENERAL, "Found the following actions:");
+        Map<Location, Long> actionLocCount = Arrays.stream(tool.getActions())
+                .collect(Collectors.groupingBy(Action::getDeclaration, Collectors.counting()));
+
+        MP.printMessage(EC.GENERAL, "Found " + tool.getActions().length + " actions (" + actionLocations.size() + " distinct):");
         for (Location loc : actionLocations) {
-            MP.printMessage(EC.GENERAL, "  " + actionNames.get(loc));
+            MP.printMessage(EC.GENERAL, "  " + actionNames.get(loc) + ": " + actionLocCount.get(loc));
         }
         Map<Location, Integer> locToId = IntStream.range(0, actionLocations.size())
                 .boxed()
@@ -171,6 +169,7 @@ public class JsonStateWriter implements IStateWriter {
         } catch (IOException ignored) { }
 
         int threads = TLCGlobals.getNumWorkers();
+//        int threads = 4;
         long exportedSize = 0;
 
         // write states
@@ -182,6 +181,7 @@ public class JsonStateWriter implements IStateWriter {
         }
 
         List<String> stateFiles = new ArrayList<>();
+        List<Integer> stateFileCounts = new ArrayList<>();
         int stateFilesCount = Math.min(states.size(), threads);
         for (int i = 0, l = 0; i < stateFilesCount; i++) {
             int div = states.size() / stateFilesCount, mod = states.size() % stateFilesCount;
@@ -191,6 +191,7 @@ public class JsonStateWriter implements IStateWriter {
             Path stateFile = stateDir.resolve(stateFileName);
 
             stateFiles.add(this.dir.relativize(stateFile).toString());
+            stateFileCounts.add(r - l);
 
             try (BufferedWriter writer = Files.newBufferedWriter(stateFile);
                  JSONWriter jsonWriter = JSONWriter.ofUTF8()) {
@@ -258,34 +259,12 @@ public class JsonStateWriter implements IStateWriter {
 
                         jsonWriter.startArray();
 
-                        Action action = edge.getAction();
+                        ConcreteAction action = edge.getAction();
                         int actionId = locToId.get(action.getDeclaration());
                         jsonWriter.writeInt32(actionId);
-                        jsonWriter.writeComma();
-
-                        OpApplNode opApplNode = (OpApplNode) action.pred;
-                        if (opApplNode.getOperator().getKind() == UserDefinedOpKind) {
-                            ExprOrOpArgNode[] args = opApplNode.getArgs();
-                            for (int k = 0; k < args.length; k++) {
-                                if (k > 0) {
-                                    jsonWriter.writeComma();
-                                }
-                                ExprOrOpArgNode arg = args[k];
-                                Object val = tool.getVal(arg, action.con, false);
-                                if (val instanceof LazyValue) {
-                                    val = ((LazyValue) val).eval(tool, states.get(edge.getFrom()), states.get(edge.getTo()));
-                                }
-                                jsonWriter.writeAny(serializeValue(val));
-                            }
-                        } else {
-                            FormalParamNode[] params = action.getOpDef().getParams();
-                            for (int k = 0; k < params.length; k++) {
-                                if (k > 0) {
-                                    jsonWriter.writeComma();
-                                }
-                                FormalParamNode param = params[k];
-                                jsonWriter.writeAny(serializeValue(tool.lookup(param, action.con, false)));
-                            }
+                        for (Object val : action.getArgs()) {
+                            jsonWriter.writeComma();
+                            jsonWriter.writeAny(serializeValue(val));
                         }
 
                         jsonWriter.endArray();
@@ -329,13 +308,13 @@ public class JsonStateWriter implements IStateWriter {
             }
             jsonWriter.endObject();
 
-            jsonWriter.writeName("state_count");
-            jsonWriter.writeColon();
-            jsonWriter.writeInt32(states.size());
-
             jsonWriter.writeName("state_files");
             jsonWriter.writeColon();
             jsonWriter.writeAny(stateFiles);
+
+            jsonWriter.writeName("state_file_counts");
+            jsonWriter.writeColon();
+            jsonWriter.writeAny(stateFileCounts);
 
             jsonWriter.writeName("execution_count");
             jsonWriter.writeColon();

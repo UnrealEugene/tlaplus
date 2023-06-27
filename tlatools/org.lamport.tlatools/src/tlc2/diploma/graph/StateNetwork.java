@@ -1,6 +1,5 @@
 package tlc2.diploma.graph;
 
-import tlc2.tool.Action;
 import tlc2.tool.TLCState;
 
 import java.util.*;
@@ -90,16 +89,18 @@ public class StateNetwork {
         return edges.size();
     }
 
-    public synchronized void addEdge(int from, int to, int cap, Action action) {
+    public void addEdge(int from, int to, int cap, ConcreteAction action) {
         // e[i] - direct edge
         Edge fwd = new Edge(from, to, 0, cap, action);
-        adjList.get(from).add(edges.size());
-        edges.add(fwd);
-
         // e[i ^ 1] - back edge
         Edge bck = new Edge(to, from, cap, cap);
-        adjList.get(to).add(edges.size());
-        edges.add(bck);
+
+        synchronized (this) {
+            adjList.get(from).add(edges.size());
+            edges.add(fwd);
+            adjList.get(to).add(edges.size());
+            edges.add(bck);
+        }
 
         fwd.twin = bck;
         bck.twin = fwd;
@@ -119,9 +120,9 @@ public class StateNetwork {
         private int flow;
         private final int capacity;
         private Edge twin;
-        private final Action action;
+        private final ConcreteAction action;
 
-        public Edge(int from, int to, int flow, int capacity, Action action) {
+        public Edge(int from, int to, int flow, int capacity, ConcreteAction action) {
             this.from = from;
             this.to = to;
             this.flow = flow;
@@ -157,7 +158,7 @@ public class StateNetwork {
             return twin;
         }
 
-        public Action getAction() {
+        public ConcreteAction getAction() {
             return action;
         }
     }
