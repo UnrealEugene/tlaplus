@@ -272,6 +272,7 @@ public class JsonStateWriter implements IStateWriter {
                         jsonWriter.writeInt32(edge.getTo());
                     }
                     jsonWriter.endArray();
+                    jsonWriter.flushTo(writer);
                 }
                 jsonWriter.endArray();
                 jsonWriter.flushTo(writer);
