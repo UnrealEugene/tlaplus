@@ -1,6 +1,7 @@
 package tlc2.diploma.graph;
 
 import tlc2.TLCGlobals;
+import tlc2.diploma.util.ArrayIntList;
 import tlc2.output.EC;
 import tlc2.output.MP;
 import tlc2.tool.ModelChecker;
@@ -15,6 +16,7 @@ public class StateGraphPathExtractor {
 
     private final StateNetwork network = new StateNetwork();
     private final List<Integer> adjListPt = new ArrayList<>();
+    private int cachedPathCount = 0;
 
     public StateGraphPathExtractor() {
         network.tryAddNode(null); // source
@@ -58,15 +60,30 @@ public class StateGraphPathExtractor {
         }
     }
 
-    public int getPathCount() {
-        int count = 0;
+    private int calculatePathCount() {
+        cachedPathCount = 0;
         for (int i = 0; i < network.getEdgeCount(); i += 2) {
             StateNetwork.Edge fwd = network.getEdge(i);
-            if (fwd.getTo() == getRoot()) {
-                count += fwd.getFlow();
+            if (fwd.getTo() == getRoot() && fwd.getAction() == null) {
+                cachedPathCount += fwd.getFlow();
             }
         }
-        return count;
+        return cachedPathCount;
+    }
+
+    public int getPathCount() {
+        return cachedPathCount;
+    }
+
+    private int calculatePathCoverTotalLength() {
+        int result = 0;
+        for (int i = 0; i < network.getEdgeCount(); i += 2) {
+            StateNetwork.Edge fwd = network.getEdge(i);
+            if (fwd.getAction() != null) {
+                result += fwd.getFlow();
+            }
+        }
+        return result;
     }
 
     public List<TLCState> getStates() {
@@ -102,43 +119,42 @@ public class StateGraphPathExtractor {
         return checkAcyclicDfs(getRoot(), new ArrayList<>(Collections.nCopies(network.getNodeCount(), 0)));
     }
 
-    private List<StateNetwork.Edge> findEulerCycle(int root) {
-        throw new UnsupportedOperationException();
-//        List<NetworkEdge> edges = new ArrayList<>();
-//        Deque<NetworkEdge> edgeStack = new ArrayDeque<>();
-//
-//        NetworkEdge firstEdge = this.edges.get(adjList.get(root).get(0));
-//        edgeStack.addLast(firstEdge);
-//        while (!edgeStack.isEmpty()) {
-//            NetworkEdge edge = edgeStack.peekLast();
-//            int v = edge.to;
-//            for (; adjListPt.get(v) < adjList.get(v).size(); adjListPt.set(v, adjListPt.get(v) + 1)) {
-//                int eId = adjList.get(v).get(adjListPt.get(v));
-//                if (eId % 2 == 1) {
-//                    continue;
-//                }
-//
-//                NetworkEdge fwd = this.edges.get(eId);
-//                NetworkEdge bck = this.edges.get(eId ^ 1);
-//                int to = fwd.to;
-//                if (to == getSink()) {
-//                    continue;
-//                }
-//
-//                if (fwd.flow > 0) {
-//                    fwd.flow -= 1;
-//                    bck.flow += 1;
-//                    edgeStack.addLast(fwd);
-//                    break;
-//                }
-//            }
-//            if (adjListPt.get(v) == adjList.get(v).size()) {
-//                edgeStack.pollLast();
-//                edges.add(edge);
-//            }
-//        }
-//        Collections.reverse(edges);
-//        return edges;
+    private List<Integer> findEulerCycle(int root) {
+        List<Integer> edges = new ArrayIntList(this.network.getEdgeCount());
+        List<Integer> edgeStack = new ArrayIntList();
+
+        edgeStack.add(this.network.getAdjacentEdgeIds(root).get(0));
+        while (!edgeStack.isEmpty()) {
+            StateNetwork.Edge edge = this.network.getEdge(edgeStack.get(edgeStack.size() - 1));
+            int v = edge.getTo();
+
+            List<Integer> adjListV = this.network.getAdjacentEdgeIds(v);
+            for (; adjListPt.get(v) < adjListV.size(); adjListPt.set(v, adjListPt.get(v) + 1)) {
+                int eId = adjListV.get(adjListPt.get(v));
+                if (eId % 2 == 1) {
+                    continue;
+                }
+
+                StateNetwork.Edge fwd = this.network.getEdge(eId);
+                StateNetwork.Edge bck = fwd.getTwin();
+                int to = fwd.getTo();
+                if (to == this.network.getSink()) {
+                    continue;
+                }
+
+                if (fwd.getFlow() > 0) {
+                    fwd.incFlow(-1);
+                    bck.incFlow(1);
+                    edgeStack.add(eId);
+                    break;
+                }
+            }
+            if (adjListPt.get(v) == adjListV.size()) {
+                edges.add(edgeStack.remove(edgeStack.size() - 1));
+            }
+        }
+        Collections.reverse(edges);
+        return edges;
     }
 
     private void extractPathAcyclicDfs(int v, List<Edge> path) {
@@ -188,13 +204,15 @@ public class StateGraphPathExtractor {
 
         boolean graphAcyclic = this.isGraphAcyclic();
         if (!graphAcyclic) {
-            MP.printMessage(EC.GENERAL, "  Warning: model state graph contains cycles!");
+            MP.printMessage(EC.GENERAL, "  WARNING: model state graph contains CYCLES!");
         }
 
-        MaxFlowSolver maxFlowSolver = new NaiveMaxFlowSolver(this.network);
+        MaxFlowSolver maxFlowSolver = graphAcyclic
+                ? new NaiveMaxFlowSolver(this.network)
+                : new DinicMaxFlowSolver(this.network);
         maxFlowSolver.findMaxFlow();
 
-        int pathCount = this.getPathCount();
+        int pathCount = this.calculatePathCount();
         MP.printMessage(EC.GENERAL, "  Constructed initial path cover ("
                 + MP.format(pathCount) + " paths, " + now() + ").");
 
@@ -204,17 +222,18 @@ public class StateGraphPathExtractor {
         } catch (Exception ignored) { }
 
         // remove negative cycles from network
-        if (graphAcyclic) {
-            new HeuristicNetworkPathOptimizer(this.network, Math.min(4, depth - 1)).optimizePaths();
+        NetworkPathOptimizer pathOptimizer = graphAcyclic
+                ? new HeuristicNetworkPathOptimizer(this.network, Math.min(4, depth - 1))
+                : new BFSNetworkPathOptimizer(this.network);
+        pathOptimizer.optimizePaths();
 
-            int newPathCount = this.getPathCount();
-            if (newPathCount < pathCount) {
-                MP.printMessage(EC.GENERAL, "  Removed " + MP.format(pathCount - newPathCount)
-                        + " redundant paths (" + MP.format(newPathCount) + " paths, " + now() + ").");
-                pathCount = newPathCount;
-            } else {
-                MP.printMessage(EC.GENERAL, "  No negative cycles were found in resulting flow (" + now() + ").");
-            }
+        int newPathCount = this.calculatePathCount();
+        if (newPathCount < pathCount) {
+            MP.printMessage(EC.GENERAL, "  Removed " + MP.format(pathCount - newPathCount)
+                    + " redundant paths (" + MP.format(newPathCount) + " paths, " + now() + ").");
+            pathCount = newPathCount;
+        } else {
+            MP.printMessage(EC.GENERAL, "  No negative cycles were found in resulting flow (" + now() + ").");
         }
 
         // transform flow to circulation
@@ -226,6 +245,11 @@ public class StateGraphPathExtractor {
                 bck.incFlow(-1);
             }
         }
+
+        int totalLength = this.calculatePathCoverTotalLength();
+        int averageLength = (int) Math.round(1.0 * totalLength / pathCount);
+        MP.printMessage(EC.GENERAL, "  Total path cover length is " + MP.format(this.calculatePathCoverTotalLength())
+                + " (average path length is " + averageLength + ").");
 
         // find paths
         adjListPt.addAll(Collections.nCopies(network.getNodeCount(), 0));
@@ -250,20 +274,37 @@ public class StateGraphPathExtractor {
                     };
                 }
             };
+        } else {
+            MP.printMessage(EC.GENERAL, "Preparing to export path cover...");
+            List<Integer> eulerCycle = this.findEulerCycle(getRoot());
+            return new Iterable<>() {
+                private int i = 0;
+
+                @Override
+                public Iterator<List<Edge>> iterator() {
+                    return new Iterator<>() {
+                        @Override
+                        public boolean hasNext() {
+                            return i < eulerCycle.size();
+                        }
+
+                        @Override
+                        public List<Edge> next() {
+                            List<Edge> path = new ArrayList<>();
+                            while (true) {
+                                StateNetwork.Edge edge = network.getEdge(eulerCycle.get(i++));
+                                if (edge.getTo() == getRoot() && edge.getAction() == null) {
+                                    return path;
+                                } else {
+                                    path.add(new Edge(edge.getFrom() - 1, edge.getTo() - 1, edge.getAction()));
+                                }
+                            }
+                        }
+                    };
+                }
+            };
         }
 
-        List<StateNetwork.Edge> eulerCycle = this.findEulerCycle(getRoot());
-        List<List<Edge>> result = new ArrayList<>();
-        List<Edge> path = new ArrayList<>();
-        for (StateNetwork.Edge edge : eulerCycle) {
-            if (edge.getTo() == getRoot()) {
-                result.add(path);
-                path = new ArrayList<>();
-            } else {
-                path.add(new Edge(edge.getFrom() - 1, edge.getTo() - 1, edge.getAction()));
-            }
-        }
-        return result;
     }
 
     public void cleanup() {
