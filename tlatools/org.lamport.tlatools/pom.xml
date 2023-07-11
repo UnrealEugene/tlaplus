@@ -255,6 +255,16 @@
 		  <artifactId>mailapi</artifactId>
 		  <version>1.6.2</version>
 	  </dependency>
+	  <dependency>
+		  <groupId>org.eclipse.collections</groupId>
+		  <artifactId>eclipse-collections-api</artifactId>
+		  <version>11.1.0</version>
+	  </dependency>
+	  <dependency>
+		  <groupId>org.eclipse.collections</groupId>
+		  <artifactId>eclipse-collections</artifactId>
+		  <version>11.1.0</version>
+	  </dependency>
   </dependencies>
 
       <!-- August 2014 - TL

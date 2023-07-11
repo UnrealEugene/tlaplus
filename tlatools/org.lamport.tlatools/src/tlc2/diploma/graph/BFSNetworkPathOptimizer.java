@@ -1,5 +1,7 @@
 package tlc2.diploma.graph;
 
+import org.eclipse.collections.api.list.primitive.IntList;
+
 import java.util.*;
 
 import static tlc2.diploma.graph.StateNetwork.INF;
@@ -25,7 +27,9 @@ public class BFSNetworkPathOptimizer implements NetworkPathOptimizer {
     private boolean tryRemovePath() {
         Collections.fill(distance, INF);
         Collections.fill(parent, -1);
-        for (int eId : network.getAdjacentEdgeIds(network.getRoot())) {
+        IntList adjListRoot = network.getAdjacentEdgeIds(network.getRoot());
+        for (int i = 0; i < adjListRoot.size(); i++) {
+            int eId = adjListRoot.get(i);
             if (eId % 2 == 0) {
                 continue;
             }
@@ -38,10 +42,11 @@ public class BFSNetworkPathOptimizer implements NetworkPathOptimizer {
             }
         }
 
-
         while (!queue.isEmpty() && distance.get(network.getRoot()) == INF) {
             int cur = queue.poll();
-            for (int eId : network.getAdjacentEdgeIds(cur)) {
+            IntList adjListCur = network.getAdjacentEdgeIds(cur);
+            for (int i = 0; i < adjListCur.size(); i++) {
+                int eId = adjListCur.get(i);
                 StateNetwork.Edge edge = network.getEdge(eId);
                 int to = edge.getTo();
                 if (to == network.getRoot() && eId % 2 == 0) {
@@ -65,9 +70,8 @@ public class BFSNetworkPathOptimizer implements NetworkPathOptimizer {
             do {
                 int eId = parent.get(cur);
                 StateNetwork.Edge fwd = network.getEdge(eId);
-                StateNetwork.Edge bck = fwd.getTwin();
-                fwd.incFlow(1);
-                bck.incFlow(-1);
+                network.incFlow(eId, 1);
+                network.incFlow(eId ^ 1, -1);
                 cur = fwd.getFrom();
             } while (cur != network.getRoot());
             return true;

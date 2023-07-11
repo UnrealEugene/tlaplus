@@ -1,70 +1,75 @@
 package tlc2.diploma.graph;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
+import org.eclipse.collections.api.list.primitive.IntList;
+import org.eclipse.collections.api.list.primitive.MutableBooleanList;
+import org.eclipse.collections.impl.list.mutable.primitive.BooleanArrayList;
 
 public class NaiveMaxFlowSolver implements MaxFlowSolver {
     private final StateNetwork network;
 
-    private final List<Boolean> used;
+    private final MutableBooleanList used;
 
     public NaiveMaxFlowSolver(StateNetwork network) {
         this.network = network;
-        this.used = new ArrayList<>(Collections.nCopies(network.getNodeCount(), false));
+        this.used = BooleanArrayList.newWithNValues(network.getNodeCount(), false);
     }
 
     private int naiveDfs(int eId) {
         StateNetwork.Edge edge = network.getEdge(eId);
         int u = edge.getTo();
+        IntList adjListU = network.getAdjacentEdgeIds(u);
 
         boolean deadEnd = true;
         int sum = 0;
         if (!used.get(u)) {
             used.set(u, true);
-            for (int i : network.getAdjacentEdgeIds(u)) {
-                StateNetwork.Edge e = network.getEdge(i);
-                if (i % 2 != 0 || e.getAction() == null) {
+            for (int i = 0; i < adjListU.size(); i++) {
+                int j = adjListU.get(i);
+                StateNetwork.Edge e = network.getEdge(j);
+                if (j % 2 != 0 || !e.hasAction()) {
                     continue;
                 }
                 deadEnd = false;
-                sum += naiveDfs(i);
+                sum += naiveDfs(j);
             }
         }
         if (deadEnd) {
-            for (int i : network.getAdjacentEdgeIds(u)) {
-                StateNetwork.Edge rootEdge = network.getEdge(i);
-                if (i % 2 == 0 && rootEdge.getTo() == network.getRoot()) {
-                    rootEdge.incFlow(1);
-                    rootEdge.getTwin().incFlow(-1);
+            for (int i = 0; i < adjListU.size(); i++) {
+                int j = adjListU.get(i);
+                StateNetwork.Edge rootEdge = network.getEdge(j);
+                if (j % 2 == 0 && rootEdge.getTo() == network.getRoot()) {
+                    network.incFlow(j, 1);
+                    network.incFlow(j ^ 1, -1);
                     sum += 1;
                 }
             }
         }
-        edge.incFlow(sum);
-        edge.getTwin().incFlow(-sum);
+        network.incFlow(eId, sum);
+        network.incFlow(eId ^ 1, -sum);
         return sum;
     }
 
     @Override
     public void findMaxFlow() {
         used.set(network.getRoot(), true);
-        for (int eId : network.getAdjacentEdgeIds(network.getRoot())) {
-            if (eId % 2 == 0 && network.getEdge(eId).getAction() != null) {
+        IntList adjListRoot = network.getAdjacentEdgeIds(network.getRoot());
+        for (int i = 0; i < adjListRoot.size(); i++) {
+            int eId = adjListRoot.get(i);
+            if (eId % 2 == 0 && network.getEdge(eId).hasAction()) {
                 naiveDfs(eId);
             }
         }
 
         for (int eId = 0; eId < network.getEdgeCount(); eId += 2) {
             StateNetwork.Edge edge = network.getEdge(eId);
-            if (edge.getAction() != null) {
-                edge.incFlow(-1);
-                edge.getTwin().incFlow(1);
+            if (edge.hasAction()) {
+                network.incFlow(eId, -1);
+                network.incFlow(eId ^ 1, 1);
             }
             if (edge.getFrom() == network.getSource() || edge.getTo() == network.getSink()) {
                 int cap = edge.getCapacity();
-                edge.incFlow(cap);
-                edge.getTwin().incFlow(-cap);
+                network.incFlow(eId, cap);
+                network.incFlow(eId ^ 1, -cap);
             }
         }
     }
