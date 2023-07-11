@@ -1,5 +1,7 @@
 package tlc2.diploma.graph;
 
+import org.eclipse.collections.api.list.ImmutableList;
+import org.eclipse.collections.impl.list.mutable.FastList;
 import tla2sany.semantic.ExprOrOpArgNode;
 import tla2sany.semantic.FormalParamNode;
 import tla2sany.semantic.OpApplNode;
@@ -10,25 +12,23 @@ import tlc2.tool.TLCState;
 import tlc2.tool.impl.Tool;
 import tlc2.value.impl.LazyValue;
 
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 import static tla2sany.semantic.ASTConstants.UserDefinedOpKind;
 
 public class ConcreteAction {
     private final Location declaration;
-    private final List<Object> args;
+    private final ImmutableList<Object> args;
 
     private ConcreteAction(Location declaration, List<Object> args) {
         this.declaration = declaration;
-        this.args = args;
+        this.args = new FastList<>(args).toImmutable();
     }
 
     public static ConcreteAction from(TLCState from, TLCState to, Action action) {
         Tool tool = (Tool) TLCGlobals.mainChecker.tool;
         OpApplNode opApplNode = (OpApplNode) action.pred;
-        List<Object> args = new ArrayList<>();
+        List<Object> args = new FastList<>();
         if (opApplNode.getOperator().getKind() == UserDefinedOpKind) {
             ExprOrOpArgNode[] nodeArgs = opApplNode.getArgs();
             for (ExprOrOpArgNode arg : nodeArgs) {
@@ -52,6 +52,6 @@ public class ConcreteAction {
     }
 
     public List<Object> getArgs() {
-        return Collections.unmodifiableList(args);
+        return args.castToList();
     }
 }

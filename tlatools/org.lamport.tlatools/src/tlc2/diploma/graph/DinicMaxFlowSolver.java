@@ -1,63 +1,76 @@
 package tlc2.diploma.graph;
 
-import java.util.*;
+import org.eclipse.collections.api.list.primitive.IntList;
+import util.ToolIO;
+
+import java.util.Arrays;
 
 import static tlc2.diploma.graph.StateNetwork.INF;
 
 public class DinicMaxFlowSolver implements MaxFlowSolver {
     private final StateNetwork network;
 
-    private final List<Integer> distance;
-    private final Queue<Integer> queue;
-    private final List<Integer> adjListPt;
+    private final int[] distance;
+    private final int[] queue;
+    private int queueLeft;
+    private int queueRight;
+    private final int[] adjListPt;
 
     public DinicMaxFlowSolver(StateNetwork network) {
         this.network = network;
-
-        this.distance = new ArrayList<>(Collections.nCopies(network.getNodeCount(), INF));
-        this.queue = new ArrayDeque<>();
-        this.adjListPt = new ArrayList<>(Collections.nCopies(network.getNodeCount(), 0));
+        this.distance = new int[network.getNodeCount()];
+        this.queue = new int[network.getNodeCount()];
+        this.queueLeft = 0;
+        this.queueRight = 0;
+        this.adjListPt = new int[network.getNodeCount()];
     }
 
-    @SuppressWarnings("DataFlowIssue")
     private boolean dinicBfs() {
-        Collections.fill(distance, INF);
-        distance.set(network.getSource(), 0);
+        int source = network.getSource(), sink = network.getSink();
 
-        queue.add(network.getSource());
-        while (!queue.isEmpty() && distance.get(network.getSink()) == INF) {
-            int cur = queue.poll();
-            for (int eId : network.getAdjacentEdgeIds(cur)) {
+        Arrays.fill(distance, INF);
+        distance[source] = 0;
+
+        queue[queueRight++] = source;
+        while (queueRight > queueLeft && distance[sink] == INF) {
+            int cur = queue[queueLeft++];
+            int dist = distance[cur];
+            IntList adjListCur = network.getAdjacentEdgeIds(cur);
+            for (int i = 0; i < adjListCur.size(); i++) {
+                int eId = adjListCur.get(i);
                 StateNetwork.Edge edge = network.getEdge(eId);
                 int to = edge.getTo();
-                if (distance.get(to) == INF && edge.getCapacity() - edge.getFlow() > 0) {
-                    distance.set(to, distance.get(cur) + 1);
-                    queue.add(to);
+                if (distance[to] == INF && edge.getCapacity() - edge.getFlow() > 0) {
+                    distance[to] = dist + 1;
+                    queue[queueRight++] = to;
                 }
             }
         }
-        queue.clear();
+        queueLeft = 0;
+        queueRight = 0;
 
-        return distance.get(network.getSink()) < INF;
+        ToolIO.out.print(distance[sink] + " ");
+
+        return distance[sink] < INF;
     }
 
     private int dinicDfs(int v, int flow) {
         if (v == network.getSink()) {
             return flow;
         }
-        List<Integer> adjListV = network.getAdjacentEdgeIds(v);
-        for (; adjListPt.get(v) < adjListV.size(); adjListPt.set(v, adjListPt.get(v) + 1)) {
-            int eId = adjListV.get(adjListPt.get(v));
+        int dist = distance[v];
+        IntList adjListV = network.getAdjacentEdgeIds(v);
+        for (; adjListPt[v] < adjListV.size(); adjListPt[v]++) {
+            int eId = adjListV.get(adjListPt[v]);
             StateNetwork.Edge fwd = network.getEdge(eId);
-            StateNetwork.Edge bck = fwd.getTwin();
             int to = fwd.getTo();
 
             int cap = fwd.getCapacity() - fwd.getFlow();
-            if (distance.get(to) == distance.get(v) + 1 && cap > 0) {
+            if (distance[to] == dist + 1 && cap > 0) {
                 int df = dinicDfs(to, Math.min(flow, cap));
                 if (df > 0) {
-                    fwd.incFlow(df);
-                    bck.incFlow(-df);
+                    network.incFlow(eId, df);
+                    network.incFlow(eId ^ 1, -df);
                     return df;
                 }
             }
@@ -67,13 +80,15 @@ public class DinicMaxFlowSolver implements MaxFlowSolver {
 
     @Override
     public void findMaxFlow() {
+        ToolIO.out.print("    DinicMaxFlowSolver started\n    ");
         while (dinicBfs()) {
-            Collections.fill(adjListPt, 0);
+            Arrays.fill(adjListPt, 0);
             while (true) {
                 if (dinicDfs(network.getSource(), INF) == 0) {
                     break;
                 }
             }
         }
+        ToolIO.out.print("\n    DinicMaxFlowSolver finished\n");
     }
 }

@@ -1,11 +1,14 @@
 package tlc2.diploma.graph;
 
+import org.eclipse.collections.api.list.primitive.IntList;
+
 import java.util.*;
 
 import static tlc2.diploma.graph.StateNetwork.INF;
 
 public class PushRelabelMaxFlowSolver implements MaxFlowSolver {
     private final StateNetwork network;
+    // TODO: List<Integer> -> IntList
     private final List<Integer> height;
     private final List<Integer> excess;
     private final List<Integer> adjListPt;
@@ -22,16 +25,15 @@ public class PushRelabelMaxFlowSolver implements MaxFlowSolver {
         this.adjListPt = new ArrayList<>(Collections.nCopies(network.getNodeCount(), 0));
         this.excessQueue = new ArrayDeque<>();
 
-        for (int eId : network.getAdjacentEdgeIds(network.getSource())) {
-            push(network.getEdge(eId));
-        }
+        network.getAdjacentEdgeIds(network.getSource()).forEach(this::push);
     }
 
-    private void push(StateNetwork.Edge e) {
+    private void push(int eId) {
+        StateNetwork.Edge e = network.getEdge(eId);
         int u = e.getFrom(), v = e.getTo();
         int d = Math.min(excess.get(u), e.getCapacity() - e.getFlow());
-        e.incFlow(d);
-        e.getTwin().incFlow(-d);
+        network.incFlow(eId, d);
+        network.incFlow(eId ^ 1, -d);
         excess.set(u, excess.get(u) - d);
         excess.set(v, excess.get(v) + d);
         if (d > 0 && excess.get(v) == d) {
@@ -41,7 +43,9 @@ public class PushRelabelMaxFlowSolver implements MaxFlowSolver {
 
     private void relabel(int u) {
         int d = INF;
-        for (int eId : network.getAdjacentEdgeIds(u)) {
+        IntList adjListU = network.getAdjacentEdgeIds(u);
+        for (int i = 0; i < adjListU.size(); i++) {
+            int eId = adjListU.get(i);
             StateNetwork.Edge e = network.getEdge(eId);
             if (e.getCapacity() - e.getFlow() > 0) {
                 d = Math.min(d, height.get(e.getTo()));
@@ -55,11 +59,12 @@ public class PushRelabelMaxFlowSolver implements MaxFlowSolver {
     private void discharge(int u) {
         while (excess.get(u) > 0) {
             int pt = adjListPt.get(u);
-            List<Integer> adjListU = network.getAdjacentEdgeIds(u);
+            IntList adjListU = network.getAdjacentEdgeIds(u);
             if (pt < adjListU.size()) {
-                StateNetwork.Edge e = network.getEdge(adjListU.get(pt));
+                int eId = adjListU.get(pt);
+                StateNetwork.Edge e = network.getEdge(eId);
                 if (e.getCapacity() - e.getFlow() > 0 && height.get(e.getFrom()) > height.get(e.getTo())) {
-                    push(e);
+                    push(eId);
                 } else {
                     adjListPt.set(u, pt + 1);
                 }
