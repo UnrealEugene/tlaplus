@@ -35,6 +35,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 public class JsonStateWriter implements IStateWriter {
     private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss z");
@@ -368,8 +369,8 @@ public class JsonStateWriter implements IStateWriter {
         }
 
         long totalSize = -1;
-        try {
-            totalSize = Files.walk(this.dir, 2)
+        try (Stream<Path> walkStream = Files.walk(this.dir, 2)) {
+            totalSize = walkStream
                     .filter(p -> p.toFile().isFile())
                     .mapToLong(p -> p.toFile().length())
                     .sum();
