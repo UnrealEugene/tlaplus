@@ -78,8 +78,8 @@ public class StateGraphPathExtractor {
         pathCount = 0;
         for (int i = 0; i < network.getEdgeCount(); i += 2) {
             StateNetwork.Edge fwd = network.getEdge(i);
-            if (fwd.getTo() == getRoot() && !fwd.hasAction()) {
-                pathCount += fwd.getFlow();
+            if (fwd.getFrom() != network.getSource() && fwd.getTo() == getRoot()) {
+                pathCount += fwd.getFlow() + (fwd.hasAction() ? 1 : 0);
             }
         }
         return pathCount;
@@ -145,12 +145,14 @@ public class StateGraphPathExtractor {
         MutableIntList edges = new IntArrayList(this.network.getEdgeCount());
         MutableIntStack edgeStack = new IntArrayStack();
 
-        edgeStack.push(this.network.getAdjacentEdgeIds(root).get(0));
+        int firstEdge = this.network.getAdjacentEdgeIds(root).get(0);
+        this.network.incFlow(firstEdge, -1);
+        this.network.incFlow(firstEdge ^ 1, 1);
+        edgeStack.push(firstEdge);
+
         while (!edgeStack.isEmpty()) {
             StateNetwork.Edge edge = this.network.getEdge(edgeStack.peek());
             int v = edge.getTo();
-
-            assert edge.getFrom() != 0 && edge.getTo() != 0;
 
             IntList adjListV = this.network.getAdjacentEdgeIds(v);
             for (; adjListPt.get(v) < adjListV.size(); adjListPt.set(v, adjListPt.get(v) + 1)) {
@@ -318,10 +320,11 @@ public class StateGraphPathExtractor {
                             while (true) {
                                 int eId = eulerCycle.get(i++);
                                 StateNetwork.Edge edge = network.getEdge(eId);
-                                if (edge.getTo() == getRoot() && !edge.hasAction()) {
-                                    return path;
-                                } else {
+                                if (edge.hasAction()) {
                                     path.add(new Edge(eId / 2, edge.getFrom() - 1, edge.getTo() - 1));
+                                }
+                                if (edge.getTo() == getRoot()) {
+                                    return path;
                                 }
                             }
                         }
