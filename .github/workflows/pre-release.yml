@@ -27,6 +27,12 @@ jobs:
         run: |
           ant -f tlatools/org.lamport.tlatools/customBuild.xml info clean compile compile-test dist
 
+      - name: "Generate Release Hashes"
+        uses: "MCJack123/ghaction-Generate-Release-Hashes@v4"
+        with:
+          hash-type: sha1
+          file-name: hashes.txt
+
       - uses: "marvinpinto/action-automatic-releases@latest"
         with:
           repo_token: "${{ secrets.GITHUB_TOKEN }}"
