@@ -1,5 +1,5 @@
 ---
-name: "pre-release"
+name: "release"
 
 on:
   push:
@@ -36,18 +36,3 @@ jobs:
           files: |
             LICENSE
             tlatools/org.lamport.tlatools/dist/*.jar
-
-  get-hashes:
-    name: "Get Hashes"
-    runs-on: "ubuntu-latest"
-
-    steps:
-      - name: "Generate checksums.txt"
-        uses: "MCJack123/ghaction-generate-release-hashes@v4"
-        with:
-          hash-type: "sha256"
-          file-name: "checksums.txt"
-          get-assets: true
-      - uses: "softprops/action-gh-release@v0.1.15"
-        with:
-          files: "checksums.txt"
