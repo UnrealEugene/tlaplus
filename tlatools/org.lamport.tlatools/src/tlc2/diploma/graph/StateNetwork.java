@@ -73,7 +73,7 @@ public class StateNetwork {
         adjList.add(new IntArrayList(4));
         if (state != null) {
             fpToId.put(state.fingerPrint(), id);
-            this.notify();
+            this.notifyAll();
         }
         return id;
     }
