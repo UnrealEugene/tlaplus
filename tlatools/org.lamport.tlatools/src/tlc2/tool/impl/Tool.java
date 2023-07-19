@@ -7,102 +7,31 @@
 
 package tlc2.tool.impl;
 
+import tla2sany.parser.SyntaxTreeNode;
+import tla2sany.semantic.*;
+import tlc2.TLCGlobals;
+import tlc2.output.EC;
+import tlc2.output.MP;
+import tlc2.tool.*;
+import tlc2.tool.coverage.CostModel;
+import tlc2.tool.profile.Profile;
+import tlc2.util.Context;
+import tlc2.util.*;
+import tlc2.value.*;
+import tlc2.value.impl.*;
+import tlc2.value.impl.Enumerable.Ordering;
+import util.Assert;
+import util.Assert.TLCRuntimeException;
+import util.FilenameToStream;
+import util.TLAConstants;
+import util.UniqueString;
+
 import java.io.File;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
-
-import tla2sany.parser.SyntaxTreeNode;
-import tla2sany.semantic.APSubstInNode;
-import tla2sany.semantic.ExprNode;
-import tla2sany.semantic.ExprOrOpArgNode;
-import tla2sany.semantic.ExternalModuleTable;
-import tla2sany.semantic.FormalParamNode;
-import tla2sany.semantic.LabelNode;
-import tla2sany.semantic.LetInNode;
-import tla2sany.semantic.LevelConstants;
-import tla2sany.semantic.LevelNode;
-import tla2sany.semantic.OpApplNode;
-import tla2sany.semantic.OpArgNode;
-import tla2sany.semantic.OpDeclNode;
-import tla2sany.semantic.OpDefNode;
-import tla2sany.semantic.OpDefOrDeclNode;
-import tla2sany.semantic.SemanticNode;
-import tla2sany.semantic.Subst;
-import tla2sany.semantic.SubstInNode;
-import tla2sany.semantic.SymbolNode;
-import tla2sany.semantic.ThmOrAssumpDefNode;
-import tlc2.TLCGlobals;
-import tlc2.output.EC;
-import tlc2.output.MP;
-import tlc2.tool.Action;
-import tlc2.tool.BuiltInOPs;
-import tlc2.tool.EvalControl;
-import tlc2.tool.EvalException;
-import tlc2.tool.IActionItemList;
-import tlc2.tool.IContextEnumerator;
-import tlc2.tool.INextStateFunctor;
-import tlc2.tool.IStateFunctor;
-import tlc2.tool.ITool;
-import tlc2.tool.StateVec;
-import tlc2.tool.TLCState;
-import tlc2.tool.TLCStateFun;
-import tlc2.tool.TLCStateInfo;
-import tlc2.tool.TLCStateMut;
-import tlc2.tool.TLCStateMutExt;
-import tlc2.tool.ToolGlobals;
-import tlc2.tool.coverage.CostModel;
-import tlc2.util.Context;
-import tlc2.util.ExpectInlined;
-import tlc2.util.IdThread;
-import tlc2.util.RandomGenerator;
-import tlc2.util.Vect;
-import tlc2.value.IFcnLambdaValue;
-import tlc2.value.IMVPerm;
-import tlc2.value.IValue;
-import tlc2.value.ValueConstants;
-import tlc2.value.Values;
-import tlc2.value.impl.Applicable;
-import tlc2.value.impl.BoolValue;
-import tlc2.value.impl.Enumerable;
-import tlc2.value.impl.Enumerable.Ordering;
-import tlc2.value.impl.EvaluatingValue;
-import tlc2.value.impl.FcnLambdaValue;
-import tlc2.value.impl.FcnParams;
-import tlc2.value.impl.FcnRcdValue;
-import tlc2.value.impl.LazySupplierValue;
-import tlc2.value.impl.LazyValue;
-import tlc2.value.impl.MVPerm;
-import tlc2.value.impl.MVPerms;
-import tlc2.value.impl.MethodValue;
-import tlc2.value.impl.ModelValue;
-import tlc2.value.impl.OpLambdaValue;
-import tlc2.value.impl.OpValue;
-import tlc2.value.impl.RecordValue;
-import tlc2.value.impl.Reducible;
-import tlc2.value.impl.SetCapValue;
-import tlc2.value.impl.SetCupValue;
-import tlc2.value.impl.SetDiffValue;
-import tlc2.value.impl.SetEnumValue;
-import tlc2.value.impl.SetOfFcnsValue;
-import tlc2.value.impl.SetOfRcdsValue;
-import tlc2.value.impl.SetOfTuplesValue;
-import tlc2.value.impl.SetPredValue;
-import tlc2.value.impl.StringValue;
-import tlc2.value.impl.SubsetValue;
-import tlc2.value.impl.TupleValue;
-import tlc2.value.impl.UnionValue;
-import tlc2.value.impl.Value;
-import tlc2.value.impl.ValueEnumeration;
-import tlc2.value.impl.ValueExcept;
-import tlc2.value.impl.ValueVec;
-import util.Assert;
-import util.Assert.TLCRuntimeException;
-import util.FilenameToStream;
-import util.TLAConstants;
-import util.UniqueString;
 
 /**
  * This class provides useful methods for tools like model checker
@@ -895,6 +824,7 @@ public abstract class Tool
   protected abstract TLCState getNextStates(final Action action, SemanticNode pred, ActionItemList acts, Context c,
                                        TLCState s0, TLCState s1, INextStateFunctor nss, CostModel cm);
   
+  @Profile
   protected final TLCState getNextStatesImpl(final Action action, SemanticNode pred, ActionItemList acts, Context c,
               TLCState s0, TLCState s1, INextStateFunctor nss, CostModel cm) {
         switch (pred.getKind()) {
@@ -1429,6 +1359,7 @@ public abstract class Tool
 				
 				// t -B-> u
 				int sz = iss.size();
+                assert sz <= 1;
 				for (int i = 0; i < sz; i++) {
 					TLCState u = s1.copy();
 					t = iss.elementAt(i);
@@ -1474,6 +1405,7 @@ public abstract class Tool
   protected abstract TLCState processUnchanged(final Action action, SemanticNode expr, ActionItemList acts, Context c,
                                           TLCState s0, TLCState s1, INextStateFunctor nss, CostModel cm);
   
+  @Profile
   protected final TLCState processUnchangedImpl(final Action action, SemanticNode expr, ActionItemList acts, Context c,
           TLCState s0, TLCState s1, INextStateFunctor nss, CostModel cm) {
     if (coverage){cm = cm.get(expr);}
@@ -1726,6 +1658,7 @@ public abstract class Tool
                           TLCState s1, final int control, final CostModel cm);
   
   @ExpectInlined
+  @Profile
   protected Value evalImpl(final SemanticNode expr, final Context c, final TLCState s0,
           final TLCState s1, final int control, CostModel cm) {
         switch (expr.getKind()) {
@@ -2891,6 +2824,7 @@ public abstract class Tool
   public abstract TLCState enabled(SemanticNode pred, IActionItemList acts,
                                 Context c, TLCState s0, TLCState s1, CostModel cm);
 
+  @Profile
   protected final TLCState enabledImpl(SemanticNode pred, ActionItemList acts,
           Context c, TLCState s0, TLCState s1, CostModel cm) {
         switch (pred.getKind()) {
@@ -3394,7 +3328,8 @@ public abstract class Tool
 
   protected abstract TLCState enabledUnchanged(SemanticNode expr, ActionItemList acts,
                                           Context c, TLCState s0, TLCState s1, CostModel cm);
-  
+
+  @Profile
   protected final TLCState enabledUnchangedImpl(SemanticNode expr, ActionItemList acts,
             Context c, TLCState s0, TLCState s1, CostModel cm) {
 	    if (coverage) {cm = cm.get(expr);}

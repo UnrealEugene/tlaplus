@@ -184,6 +184,7 @@
 			<classpath>
 				<pathelement location="lib/aspectjrt-1.9.2.jar" />
 				<pathelement location="lib/aspectjtools-1.9.2.jar" />
+				<pathelement location="lib/gson/gson-2.8.6.jar" />
 				<pathelement path="${class.dir}" />
 			</classpath>
 		</iajc>
