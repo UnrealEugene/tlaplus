@@ -1,8 +1,9 @@
-package tlc2.diploma.graph;
+package tlc2.diploma.graph.algo;
 
 import org.eclipse.collections.api.list.primitive.IntList;
 import org.eclipse.collections.api.list.primitive.MutableIntList;
 import org.eclipse.collections.impl.list.mutable.primitive.IntArrayList;
+import tlc2.diploma.graph.StateNetwork;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -33,25 +34,22 @@ public class HeuristicNetworkPathOptimizer implements NetworkPathOptimizer {
         for (; adjListPt.get(u) < adjListU.size(); adjListPt.set(u, adjListPt.get(u) + 1)) {
             int eId = adjListU.get(adjListPt.get(u));
             StateNetwork.Edge fwd = network.getEdge(eId);
-            StateNetwork.Edge bck = network.getEdge(eId ^ 1);
             if (fwd.getFlow() == 0) {
                 continue;
             }
             int to = fwd.getTo(), w = distance.get(u) < distance.get(to) ? 0 : 1;
-            if (eId % 2 == 0 && to == network.getRoot() && !fwd.hasAction()) {
+            if (fwd.isForward() && to == network.getRoot() && !fwd.hasAction()) {
                 int df = Math.min(flow, fwd.getFlow());
                 network.incFlow(eId, -df);
-                network.incFlow(eId ^ 1, df);
                 return df;
             }
-            if (!fwd.hasAction() && !bck.hasAction()) {
+            if (!fwd.hasAction() && !fwd.getTwin().hasAction()) {
                 continue;
             }
             if (color.get(u) + w == color.get(to)) {
                 int df = simpleCycleDfs(to, Math.min(flow, fwd.getFlow()));
                 if (df > 0) {
                     network.incFlow(eId, -df);
-                    network.incFlow(eId ^ 1, df);
                     return df;
                 }
             }
@@ -74,8 +72,7 @@ public class HeuristicNetworkPathOptimizer implements NetworkPathOptimizer {
             for (int i = 0; i < adjListU.size(); i++) {
                 int eId = adjListU.get(i);
                 StateNetwork.Edge fwd = network.getEdge(eId);
-                StateNetwork.Edge bck = network.getEdge(eId ^ 1);
-                if (!fwd.hasAction() && !bck.hasAction()) {
+                if (!fwd.hasAction() && !fwd.getTwin().hasAction()) {
                     continue;
                 }
                 int to = fwd.getTo();
@@ -101,8 +98,7 @@ public class HeuristicNetworkPathOptimizer implements NetworkPathOptimizer {
             for (int i = 0; i < adjListU.size(); i++) {
                 int eId = adjListU.get(i);
                 StateNetwork.Edge fwd = network.getEdge(eId);
-                StateNetwork.Edge bck = network.getEdge(eId ^ 1);
-                if (fwd.getFlow() == 0 || (!fwd.hasAction() && !bck.hasAction())) {
+                if (fwd.getFlow() == 0 || (!fwd.hasAction() && !fwd.getTwin().hasAction())) {
                     continue;
                 }
                 int to = fwd.getTo(), w = distance.get(u) < distance.get(to) ? 0 : 1;

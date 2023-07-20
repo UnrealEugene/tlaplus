@@ -1,6 +1,7 @@
-package tlc2.diploma.graph;
+package tlc2.diploma.graph.algo;
 
 import org.eclipse.collections.api.list.primitive.IntList;
+import tlc2.diploma.graph.StateNetwork;
 
 import java.util.*;
 
@@ -30,10 +31,10 @@ public class BFSNetworkPathOptimizer implements NetworkPathOptimizer {
         IntList adjListRoot = network.getAdjacentEdgeIds(network.getRoot());
         for (int i = 0; i < adjListRoot.size(); i++) {
             int eId = adjListRoot.get(i);
-            if (eId % 2 == 0) {
+            StateNetwork.Edge edge = network.getEdge(eId);
+            if (edge.isForward()) {
                 continue;
             }
-            StateNetwork.Edge edge = network.getEdge(eId);
             int to = edge.getTo();
             if (edge.getCapacity() - edge.getFlow() > 0) {
                 distance.set(to, 0);
@@ -49,14 +50,14 @@ public class BFSNetworkPathOptimizer implements NetworkPathOptimizer {
                 int eId = adjListCur.get(i);
                 StateNetwork.Edge edge = network.getEdge(eId);
                 int to = edge.getTo();
-                if (to == network.getRoot() && eId % 2 == 0) {
+                if (to == network.getRoot() && edge.isForward()) {
                     continue;
                 }
                 if (distance.get(to) == INF && edge.getCapacity() - edge.getFlow() > 0) {
                     distance.set(to, distance.get(cur) + 1);
                     parent.set(to, eId);
                     queue.add(to);
-                    count.set(to, count.get(cur) + (eId % 2 == 0 ? 1 : 0));
+                    count.set(to, count.get(cur) + (edge.isForward() ? 1 : 0));
                 }
             }
         }
@@ -71,7 +72,6 @@ public class BFSNetworkPathOptimizer implements NetworkPathOptimizer {
                 int eId = parent.get(cur);
                 StateNetwork.Edge fwd = network.getEdge(eId);
                 network.incFlow(eId, 1);
-                network.incFlow(eId ^ 1, -1);
                 cur = fwd.getFrom();
             } while (cur != network.getRoot());
             return true;

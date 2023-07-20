@@ -1,8 +1,9 @@
-package tlc2.diploma.graph;
+package tlc2.diploma.graph.algo;
 
 import org.eclipse.collections.api.list.primitive.IntList;
 import org.eclipse.collections.api.list.primitive.MutableBooleanList;
 import org.eclipse.collections.impl.list.mutable.primitive.BooleanArrayList;
+import tlc2.diploma.graph.StateNetwork;
 
 public class NaiveMaxFlowSolver implements MaxFlowSolver {
     private final StateNetwork network;
@@ -26,7 +27,7 @@ public class NaiveMaxFlowSolver implements MaxFlowSolver {
             for (int i = 0; i < adjListU.size(); i++) {
                 int j = adjListU.get(i);
                 StateNetwork.Edge e = network.getEdge(j);
-                if (j % 2 != 0 || !e.hasAction()) {
+                if (!e.isForward() || !e.hasAction()) {
                     continue;
                 }
                 deadEnd = false;
@@ -37,15 +38,13 @@ public class NaiveMaxFlowSolver implements MaxFlowSolver {
             for (int i = 0; i < adjListU.size(); i++) {
                 int j = adjListU.get(i);
                 StateNetwork.Edge rootEdge = network.getEdge(j);
-                if (j % 2 == 0 && rootEdge.getTo() == network.getRoot()) {
+                if (rootEdge.isForward() && rootEdge.getTo() == network.getRoot()) {
                     network.incFlow(j, 1);
-                    network.incFlow(j ^ 1, -1);
                     sum += 1;
                 }
             }
         }
         network.incFlow(eId, sum);
-        network.incFlow(eId ^ 1, -sum);
         return sum;
     }
 
@@ -55,7 +54,8 @@ public class NaiveMaxFlowSolver implements MaxFlowSolver {
         IntList adjListRoot = network.getAdjacentEdgeIds(network.getRoot());
         for (int i = 0; i < adjListRoot.size(); i++) {
             int eId = adjListRoot.get(i);
-            if (eId % 2 == 0 && network.getEdge(eId).hasAction()) {
+            StateNetwork.Edge edge = network.getEdge(eId);
+            if (edge.isForward() && edge.hasAction()) {
                 naiveDfs(eId);
             }
         }
@@ -64,12 +64,10 @@ public class NaiveMaxFlowSolver implements MaxFlowSolver {
             StateNetwork.Edge edge = network.getEdge(eId);
             if (edge.hasAction()) {
                 network.incFlow(eId, -1);
-                network.incFlow(eId ^ 1, 1);
             }
             if (edge.getFrom() == network.getSource() || edge.getTo() == network.getSink()) {
                 int cap = edge.getCapacity();
                 network.incFlow(eId, cap);
-                network.incFlow(eId ^ 1, -cap);
             }
         }
     }

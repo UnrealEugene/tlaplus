@@ -1,7 +1,6 @@
 package tlc2.diploma.graph;
 
 import org.eclipse.collections.api.list.primitive.IntList;
-import org.eclipse.collections.api.list.primitive.MutableBooleanList;
 import org.eclipse.collections.api.list.primitive.MutableIntList;
 import org.eclipse.collections.api.map.primitive.MutableLongIntMap;
 import org.eclipse.collections.impl.list.mutable.FastList;
@@ -120,20 +119,13 @@ public class StateNetwork {
     }
 
     private int addEdge(int from, int to, int cap, boolean hasAction) {
-        // e[i] - direct edge
-        Edge fwd = new Edge(from, to, 0, cap, hasAction);
-        // e[i ^ 1] - back edge
-        Edge bck = new Edge(to, from, cap, cap);
-
         int id;
         synchronized (this) {
             id = edges.size();
+            edges.add(from, to, cap, hasAction);
             adjList.get(from).add(id);
-            edges.add(fwd);
             adjList.get(to).add(id + 1);
-            edges.add(bck);
         }
-
         return id;
     }
 
@@ -141,20 +133,36 @@ public class StateNetwork {
         return edges.get(i);
     }
 
+    public void ensureEdgeCapacity(int capacity) {
+        edges.ensureCapacity(capacity);
+    }
+
     public IntList getAdjacentEdgeIds(int i) {
         return adjList.get(i).asUnmodifiable();
     }
 
     public void incFlow(int index, int flow) {
-        edges.flowList.set(index, edges.flowList.get(index) + flow);
+        int newIndex = index / 2;
+        int df = index % 2 == 0 ? flow : -flow;
+        edges.flowList.set(newIndex, edges.flowList.get(newIndex) + df);
+    }
+
+    public interface Edge {
+        int getFrom();
+        int getTo();
+        int getFlow();
+        int getCapacity();
+        boolean hasAction();
+        boolean isForward();
+        Edge getTwin();
     }
 
     public static class EdgeArrayList extends AbstractList<Edge> {
-        private final MutableIntList fromList;
-        private final MutableIntList toList;
-        private final MutableIntList flowList;
-        private final MutableIntList capacityList;
-        private final MutableBooleanList hasActionList;
+        private final IntArrayList fromList;
+        private final IntArrayList toList;
+        private final IntArrayList flowList;
+        private final IntArrayList capacityList;
+        private final BooleanArrayList hasActionList;
 
         public EdgeArrayList() {
             this.fromList = new IntArrayList();
@@ -164,69 +172,114 @@ public class StateNetwork {
             this.hasActionList = new BooleanArrayList();
         }
 
-        @Override
-        public boolean add(Edge edge) {
-            return fromList.add(edge.getFrom())
-                    & toList.add(edge.getTo())
-                    & flowList.add(edge.getFlow())
-                    & capacityList.add(edge.getCapacity())
-                    & hasActionList.add(edge.hasAction());
+        public boolean add(int from, int to, int capacity, boolean hasAction) {
+            hasActionList.add(hasAction);
+            return fromList.add(from) & toList.add(to) & flowList.add(0) & capacityList.add(capacity);
         }
 
         @Override
         public Edge get(int i) {
-            return new Edge(
-                    fromList.get(i),
-                    toList.get(i),
-                    flowList.get(i),
-                    capacityList.get(i),
-                    hasActionList.get(i)
-            );
+            return i % 2 == 0 ? new ForwardEdgeView(i / 2) : new BackwardEdgeView(i / 2);
         }
 
         @Override
         public int size() {
-            return hasActionList.size();
-        }
-    }
-
-    public static class Edge {
-        private final int from;
-        private final int to;
-        private final int flow;
-        private final int capacity;
-        private final boolean hasAction;
-
-        public Edge(int from, int to, int flow, int capacity, boolean hasAction) {
-            this.from = from;
-            this.to = to;
-            this.flow = flow;
-            this.capacity = capacity;
-            this.hasAction = hasAction;
+            return 2 * hasActionList.size();
         }
 
-        public Edge(int from, int to, int flow, int capacity) {
-            this(from, to, flow, capacity, false);
+        public void ensureCapacity(int capacity) {
+            int newCapacity = (capacity + 1) / 2;
+            fromList.ensureCapacity(newCapacity);
+            toList.ensureCapacity(newCapacity);
+            flowList.ensureCapacity(newCapacity);
+            capacityList.ensureCapacity(newCapacity);
+//            hasActionList.ensureCapacity(newCapacity);
         }
 
-        public int getFrom() {
-            return from;
+        private class ForwardEdgeView implements Edge {
+            private final int id;
+
+            private ForwardEdgeView(int id) {
+                this.id = id;
+            }
+
+            @Override
+            public int getFrom() {
+                return EdgeArrayList.this.fromList.get(id);
+            }
+
+            @Override
+            public int getTo() {
+                return EdgeArrayList.this.toList.get(id);
+            }
+
+            @Override
+            public int getFlow() {
+                return EdgeArrayList.this.flowList.get(id);
+            }
+
+            @Override
+            public int getCapacity() {
+                return EdgeArrayList.this.capacityList.get(id);
+            }
+
+            @Override
+            public boolean hasAction() {
+                return EdgeArrayList.this.hasActionList.get(id);
+            }
+
+            @Override
+            public boolean isForward() {
+                return true;
+            }
+
+            @Override
+            public Edge getTwin() {
+                return new BackwardEdgeView(id);
+            }
         }
 
-        public int getTo() {
-            return to;
-        }
+        private class BackwardEdgeView implements Edge {
+            private final int id;
 
-        public int getFlow() {
-            return flow;
-        }
+            private BackwardEdgeView(int id) {
+                this.id = id;
+            }
 
-        public int getCapacity() {
-            return capacity;
-        }
+            @Override
+            public int getFrom() {
+                return EdgeArrayList.this.toList.get(id);
+            }
 
-        public boolean hasAction() {
-            return hasAction;
+            @Override
+            public int getTo() {
+                return EdgeArrayList.this.fromList.get(id);
+            }
+
+            @Override
+            public int getFlow() {
+                return getCapacity() - EdgeArrayList.this.flowList.get(id);
+            }
+
+            @Override
+            public int getCapacity() {
+                return EdgeArrayList.this.capacityList.get(id);
+            }
+
+            @Override
+            public boolean hasAction() {
+                return false;
+            }
+
+            @Override
+            public boolean isForward() {
+                return false;
+            }
+
+            @Override
+            public Edge getTwin() {
+                return new ForwardEdgeView(id);
+            }
         }
     }
 }

@@ -1,6 +1,7 @@
-package tlc2.diploma.graph;
+package tlc2.diploma.graph.algo;
 
 import org.eclipse.collections.api.list.primitive.IntList;
+import tlc2.diploma.graph.StateNetwork;
 import util.ToolIO;
 
 import java.util.Arrays;
@@ -70,7 +71,6 @@ public class DinicMaxFlowSolver implements MaxFlowSolver {
                 int df = dinicDfs(to, Math.min(flow, cap));
                 if (df > 0) {
                     network.incFlow(eId, df);
-                    network.incFlow(eId ^ 1, -df);
                     return df;
                 }
             }

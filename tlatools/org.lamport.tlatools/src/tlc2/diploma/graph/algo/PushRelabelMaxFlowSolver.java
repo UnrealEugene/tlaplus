@@ -1,6 +1,7 @@
-package tlc2.diploma.graph;
+package tlc2.diploma.graph.algo;
 
 import org.eclipse.collections.api.list.primitive.IntList;
+import tlc2.diploma.graph.StateNetwork;
 
 import java.util.*;
 
@@ -33,7 +34,6 @@ public class PushRelabelMaxFlowSolver implements MaxFlowSolver {
         int u = e.getFrom(), v = e.getTo();
         int d = Math.min(excess.get(u), e.getCapacity() - e.getFlow());
         network.incFlow(eId, d);
-        network.incFlow(eId ^ 1, -d);
         excess.set(u, excess.get(u) - d);
         excess.set(v, excess.get(v) + d);
         if (d > 0 && excess.get(v) == d) {
