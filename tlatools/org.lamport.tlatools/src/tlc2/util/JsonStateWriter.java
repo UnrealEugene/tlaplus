@@ -288,7 +288,9 @@ public class JsonStateWriter implements IStateWriter {
                         jsonWriter.writeInt32(edge.getTo());
                     }
                     jsonWriter.endArray();
-                    jsonWriter.flushTo(writer);
+                    if ((j - l) % 1024 == 1023) {
+                        jsonWriter.flushTo(writer);
+                    }
                 }
                 jsonWriter.endArray();
                 jsonWriter.flushTo(writer);
@@ -426,8 +428,6 @@ public class JsonStateWriter implements IStateWriter {
                 MP.printMessage(EC.GENERAL, "Successfully generated Go model mapping file " + goFilename + ".");
             }
         }
-
-        this.stateGraphPathExtractor.cleanup();
     }
 
     @Override
