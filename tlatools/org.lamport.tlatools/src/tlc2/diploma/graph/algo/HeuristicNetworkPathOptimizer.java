@@ -58,7 +58,8 @@ public class HeuristicNetworkPathOptimizer implements NetworkPathOptimizer {
     }
 
     private void distanceBfs() {
-        distance.collectInt(x -> INF, distance);
+        distance.clear();
+        distance.addAll(IntArrayList.newWithNValues(network.getNodeCount(), INF));
 
         // TODO: change to eclipse-collections Queue
         Queue<Integer> queue = new ArrayDeque<>();
@@ -85,7 +86,8 @@ public class HeuristicNetworkPathOptimizer implements NetworkPathOptimizer {
     }
 
     private void colorBfs() {
-        color.collectInt(x -> INF, color);
+        color.clear();
+        color.addAll(IntArrayList.newWithNValues(network.getNodeCount(), INF));
 
         Deque<Integer> deque = new ArrayDeque<>();
         deque.add(network.getRoot());
@@ -120,7 +122,9 @@ public class HeuristicNetworkPathOptimizer implements NetworkPathOptimizer {
         for (int i = 1; i <= iterations; i++) {
             colorBfs();
 
-            adjListPt.collectInt(x -> 0, adjListPt);
+            adjListPt.clear();
+            adjListPt.addAll(IntArrayList.newWithNValues(network.getNodeCount(), 0));
+
             boolean progress = false;
             while (simpleCycleDfs(network.getRoot(), INF) != 0) {
                 progress = true;
