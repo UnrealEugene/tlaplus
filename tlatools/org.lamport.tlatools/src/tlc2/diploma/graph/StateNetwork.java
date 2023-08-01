@@ -66,13 +66,19 @@ public class StateNetwork {
         this.root = root;
     }
 
-    public synchronized int addNode(TLCState state) {
+    public int addNode(TLCState state) {
         ensureNotShutDown();
-        int id = adjList.size();
-        adjList.add(new IntArrayList(4));
+        int id;
+        synchronized (adjList) {
+            id = adjList.size();
+            adjList.add(new IntArrayList(4));
+        }
         if (state != null) {
-            fpToId.put(state.fingerPrint(), id);
-            this.notifyAll();
+            long stateFp = state.fingerPrint();
+            synchronized (fpToId) {
+                fpToId.put(stateFp, id);
+                fpToId.notifyAll();
+            }
         }
         return id;
     }
@@ -98,33 +104,54 @@ public class StateNetwork {
         return edges.size();
     }
 
-    public synchronized int addEdge(TLCState fromState, TLCState toState, int cap) {
-        while (true) {
-            try {
-                int from = fpToId.getOrThrow(fromState.fingerPrint());
-                int to = fpToId.getOrThrow(toState.fingerPrint());
-                return addEdge(from, to, cap, true);
-            } catch (IllegalStateException e) { // needed for case when toState is not in fpToId yet
-                try {
-                    this.wait();
-                } catch (InterruptedException ex) {
-                    throw new RuntimeException(ex);
+    public int addEdge(TLCState fromState, TLCState toState, int cap) {
+        long fromFp = fromState.fingerPrint(), toFp = toState.fingerPrint();
+        int from, to;
+        try {
+            synchronized (fpToId) {
+                while (true) {
+                    from = fpToId.getIfAbsent(fromFp, -1);
+                    if (from != -1) {
+                        break;
+                    }
+                    fpToId.wait();
+                }
+                while (true) {
+                    to = fpToId.getIfAbsent(toFp, -1);
+                    if (to != -1) {
+                        break;
+                    }
+                    fpToId.wait();
                 }
             }
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
         }
+        return addEdge(from, to, cap, true);
     }
 
     public int addEdge(int from, int to, int cap) {
         return addEdge(from, to, cap, false);
     }
 
+    @SuppressWarnings("SynchronizationOnLocalVariableOrMethodParameter")
     private int addEdge(int from, int to, int cap, boolean hasAction) {
+        MutableIntList adjListFrom, adjListTo;
+        synchronized (adjList) {
+            adjListFrom = adjList.get(from);
+            adjListTo = adjList.get(to);
+        }
+
         int id;
-        synchronized (this) {
+        synchronized (edges) {
             id = edges.size();
             edges.add(from, to, cap, hasAction);
-            adjList.get(from).add(id);
-            adjList.get(to).add(id + 1);
+        }
+        synchronized (adjListFrom) {
+            adjListFrom.add(id);
+        }
+        synchronized (adjListTo) {
+            adjListTo.add(id + 1);
         }
         return id;
     }
