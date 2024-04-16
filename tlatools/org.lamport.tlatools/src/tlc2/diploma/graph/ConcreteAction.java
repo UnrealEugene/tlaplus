@@ -10,7 +10,11 @@ import tlc2.TLCGlobals;
 import tlc2.tool.Action;
 import tlc2.tool.TLCState;
 import tlc2.tool.impl.Tool;
+import tlc2.util.FP64;
+import tlc2.value.IValue;
 import tlc2.value.impl.LazyValue;
+import tlc2.value.impl.StringValue;
+import tlc2.value.impl.Value;
 
 import java.util.List;
 
@@ -18,9 +22,9 @@ import static tla2sany.semantic.ASTConstants.UserDefinedOpKind;
 
 public class ConcreteAction {
     private final Location declaration;
-    private final ImmutableList<Object> args;
+    private final ImmutableList<IValue> args;
 
-    private ConcreteAction(Location declaration, List<Object> args) {
+    private ConcreteAction(Location declaration, List<IValue> args) {
         this.declaration = declaration;
         this.args = new FastList<>(args).toImmutable();
     }
@@ -28,21 +32,32 @@ public class ConcreteAction {
     public static ConcreteAction from(TLCState from, TLCState to, Action action) {
         Tool tool = (Tool) TLCGlobals.mainChecker.tool;
         OpApplNode opApplNode = (OpApplNode) action.pred;
-        List<Object> args = new FastList<>();
+        List<IValue> args = new FastList<>();
         if (opApplNode.getOperator().getKind() == UserDefinedOpKind) {
             ExprOrOpArgNode[] nodeArgs = opApplNode.getArgs();
             for (ExprOrOpArgNode arg : nodeArgs) {
                 Object val = tool.getVal(arg, action.con, false);
                 if (val instanceof LazyValue) {
-                    val = ((LazyValue) val).eval(tool, from, to);
+                    args.add(((LazyValue) val).eval(tool, from, to));
+                } else if (val instanceof IValue) {
+                    args.add((IValue) val);
+                } else {
+                    args.add(new StringValue(val.toString()));
                 }
-                args.add(val);
             }
         } else {
             FormalParamNode[] params = action.getOpDef().getParams();
             for (FormalParamNode param : params) {
-                args.add(tool.lookup(param, action.con, false));
+                Object val = tool.lookup(param, action.con, false);
+                if (val instanceof IValue) {
+                    args.add((IValue) val);
+                } else {
+                    args.add(new StringValue(val.toString()));
+                }
             }
+        }
+        for (IValue arg : args) {
+            arg.deepNormalize();
         }
         return new ConcreteAction(action.getDeclaration(), args);
     }
@@ -51,7 +66,15 @@ public class ConcreteAction {
         return declaration;
     }
 
-    public List<Object> getArgs() {
+    public List<IValue> getArgs() {
         return args.castToList();
+    }
+
+    public long fingerPrint() {
+        long fp = FP64.New();
+        for (IValue arg : args) {
+            fp = arg.fingerPrint(fp);
+        }
+        return FP64.Extend(fp, declaration.hashCode());
     }
 }

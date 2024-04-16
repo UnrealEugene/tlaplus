@@ -32,8 +32,8 @@ public class StateGraphPathExtractor {
         return network.addNode(state) - 1;
     }
 
-    public int addAction(TLCState from, TLCState to) {
-        return network.addEdge(from, to, INF) / 2;
+    public int addAction(TLCState from, TLCState to, ConcreteAction action) {
+        return network.addEdge(from, to, action) / 2;
     }
 
     private void constructNetwork() {
@@ -149,6 +149,12 @@ public class StateGraphPathExtractor {
         boolean graphAcyclic = this.isGraphAcyclic();
         if (!graphAcyclic) {
             MP.printMessage(EC.GENERAL, "  WARNING: model state graph contains CYCLES!");
+        }
+
+        int reducedActionCount = new PartialOrderReducer(this.network).reduce();
+        if (reducedActionCount > 0) {
+            MP.printMessage(EC.GENERAL, "Optimized out " + MP.format(reducedActionCount) + " transitions " +
+                    "using partial order reduction (" + MP.format(actionCount - reducedActionCount) + " transitions left).");
         }
 
         MaxFlowSolver maxFlowSolver = graphAcyclic

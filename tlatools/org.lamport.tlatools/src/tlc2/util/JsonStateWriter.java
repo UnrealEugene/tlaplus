@@ -73,15 +73,12 @@ public class JsonStateWriter implements IStateWriter {
         this.locToId = new HashMap<>();
     }
 
-    private Object serializeValue(Object value) {
+    private Object serializeValue(IValue value) {
         if (value == null) {
             return null;
         }
-        if (!(value instanceof Value)) {
-            value = new StringValue(value.toString());
-        }
         try {
-            return Json.getNode((Value) value);
+            return Json.getNode(value);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -112,16 +109,15 @@ public class JsonStateWriter implements IStateWriter {
         });
     }
 
-    private void writeJsonAction(int index, TLCState from, TLCState to, Action action) {
-        ConcreteAction concreteAction = ConcreteAction.from(from, to, action);
+    private void writeJsonAction(int index, TLCState from, TLCState to, ConcreteAction action) {
         int threadId = getThreadId();
         this.actionWriters[threadId].write(jsonWriter -> {
             jsonWriter.writeName(Integer.toString(index));
             jsonWriter.writeColon();
             jsonWriter.startArray();
-            int actionId = this.locToId.get(concreteAction.getDeclaration());
+            int actionId = this.locToId.get(action.getDeclaration());
             jsonWriter.writeInt32(actionId);
-            for (Object val : concreteAction.getArgs()) {
+            for (IValue val : action.getArgs()) {
                 jsonWriter.writeComma();
                 jsonWriter.writeAny(serializeValue(val));
             }
@@ -197,8 +193,9 @@ public class JsonStateWriter implements IStateWriter {
             this.writeJsonState(id, successor);
         }
         if (state.fingerPrint() != successor.fingerPrint()) {
-            int id = this.stateGraphPathExtractor.addAction(state, successor);
-            this.writeJsonAction(id, state, successor, action);
+            ConcreteAction concreteAction = ConcreteAction.from(state, successor, action);
+            int id = this.stateGraphPathExtractor.addAction(state, successor, concreteAction);
+            this.writeJsonAction(id, state, successor, concreteAction);
         }
     }
 

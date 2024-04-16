@@ -6,6 +6,7 @@ import org.eclipse.collections.api.map.primitive.MutableLongIntMap;
 import org.eclipse.collections.impl.list.mutable.FastList;
 import org.eclipse.collections.impl.list.mutable.primitive.BooleanArrayList;
 import org.eclipse.collections.impl.list.mutable.primitive.IntArrayList;
+import org.eclipse.collections.impl.list.mutable.primitive.LongArrayList;
 import org.eclipse.collections.impl.map.mutable.primitive.LongIntHashMap;
 import tlc2.tool.TLCState;
 
@@ -104,7 +105,7 @@ public class StateNetwork {
         return edges.size();
     }
 
-    public int addEdge(TLCState fromState, TLCState toState, int cap) {
+    public int addEdge(TLCState fromState, TLCState toState, ConcreteAction action) {
         long fromFp = fromState.fingerPrint(), toFp = toState.fingerPrint();
         int from, to;
         try {
@@ -127,15 +128,15 @@ public class StateNetwork {
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
-        return addEdge(from, to, cap, true);
+        return addEdge(from, to, INF, true, action.fingerPrint());
     }
 
     public int addEdge(int from, int to, int cap) {
-        return addEdge(from, to, cap, false);
+        return addEdge(from, to, cap, false, 0L);
     }
 
     @SuppressWarnings("SynchronizationOnLocalVariableOrMethodParameter")
-    private int addEdge(int from, int to, int cap, boolean hasAction) {
+    private int addEdge(int from, int to, int cap, boolean hasAction, long actionHash) {
         MutableIntList adjListFrom, adjListTo;
         synchronized (adjList) {
             adjListFrom = adjList.get(from);
@@ -145,7 +146,7 @@ public class StateNetwork {
         int id;
         synchronized (edges) {
             id = edges.size();
-            edges.add(from, to, cap, hasAction);
+            edges.add(from, to, cap, hasAction, actionHash);
         }
         synchronized (adjListFrom) {
             adjListFrom.add(id);
@@ -174,13 +175,29 @@ public class StateNetwork {
         edges.flowList.set(newIndex, edges.flowList.get(newIndex) + df);
     }
 
+    public void markAsRedundant(int index) {
+        int newIndex = index / 2;
+        assert edges.flowList.get(newIndex) == 0;
+        edges.capacityList.set(newIndex, 0);
+        edges.capacityList.set(newIndex + 1, 0);
+        edges.hasActionList.set(newIndex, false); // TODO: make sure other code doesnt confuse redundant edges with root edges
+    }
+
     public interface Edge {
         int getFrom();
+
         int getTo();
+
         int getFlow();
+
         int getCapacity();
+
         boolean hasAction();
+
+        long getActionHash();
+
         boolean isForward();
+
         Edge getTwin();
     }
 
@@ -189,7 +206,9 @@ public class StateNetwork {
         private final IntArrayList toList;
         private final IntArrayList flowList;
         private final IntArrayList capacityList;
+
         private final BooleanArrayList hasActionList;
+        private final LongArrayList actionHashList;
 
         public EdgeArrayList() {
             this.fromList = new IntArrayList();
@@ -197,11 +216,16 @@ public class StateNetwork {
             this.flowList = new IntArrayList();
             this.capacityList = new IntArrayList();
             this.hasActionList = new BooleanArrayList();
+            this.actionHashList = new LongArrayList();
         }
 
-        public boolean add(int from, int to, int capacity, boolean hasAction) {
+        public boolean add(int from, int to, int capacity, boolean hasAction, long actionHash) {
             hasActionList.add(hasAction);
-            return fromList.add(from) & toList.add(to) & flowList.add(0) & capacityList.add(capacity);
+            return fromList.add(from)
+                    & toList.add(to)
+                    & flowList.add(0)
+                    & capacityList.add(capacity)
+                    & actionHashList.add(actionHash);
         }
 
         @Override
@@ -221,6 +245,7 @@ public class StateNetwork {
             flowList.ensureCapacity(newCapacity);
             capacityList.ensureCapacity(newCapacity);
 //            hasActionList.ensureCapacity(newCapacity);
+            actionHashList.ensureCapacity(newCapacity);
         }
 
         private class ForwardEdgeView implements Edge {
@@ -253,6 +278,11 @@ public class StateNetwork {
             @Override
             public boolean hasAction() {
                 return EdgeArrayList.this.hasActionList.get(id);
+            }
+
+            @Override
+            public long getActionHash() {
+                return EdgeArrayList.this.actionHashList.get(id);
             }
 
             @Override
@@ -296,6 +326,11 @@ public class StateNetwork {
             @Override
             public boolean hasAction() {
                 return false;
+            }
+
+            @Override
+            public long getActionHash() {
+                return 0;
             }
 
             @Override
