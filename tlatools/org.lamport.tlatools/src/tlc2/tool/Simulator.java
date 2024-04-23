@@ -41,10 +41,7 @@ import tlc2.tool.liveness.LiveCheck;
 import tlc2.tool.liveness.LiveCheck1;
 import tlc2.tool.liveness.LiveException;
 import tlc2.tool.liveness.NoOpLiveCheck;
-import tlc2.util.DotActionWriter;
-import tlc2.util.IdThread;
-import tlc2.util.RandomGenerator;
-import tlc2.util.Vect;
+import tlc2.util.*;
 import tlc2.util.statistics.DummyBucketStatistics;
 import tlc2.value.IValue;
 import tlc2.value.impl.BoolValue;
@@ -76,9 +73,9 @@ public class Simulator {
 	// SZ Feb 20, 2009: added the possibility to pass the SpecObject
 	public Simulator(String specFile, String configFile, String traceFile, boolean deadlock, int traceDepth,
 			long traceNum, RandomGenerator rng, long seed, FilenameToStream resolver,
-			int numWorkers) throws IOException {
+			int numWorkers, ITraceWriter traceWriter) throws IOException {
 		this(new FastTool(extracted(specFile), configFile, resolver, Tool.Mode.Simulation, new HashMap<>()), "", traceFile, deadlock,
-				traceDepth, traceNum, null, rng, seed, resolver, numWorkers);
+				traceDepth, traceNum, null, rng, seed, resolver, numWorkers, traceWriter);
 	}
 
 	private static String extracted(String specFile) {
@@ -88,8 +85,9 @@ public class Simulator {
 
 	public Simulator(ITool tool, String metadir, String traceFile, boolean deadlock, int traceDepth,
 				long traceNum, String traceActions, RandomGenerator rng, long seed, FilenameToStream resolver,
-				int numWorkers) throws IOException {
+				int numWorkers, ITraceWriter traceWriter) throws IOException {
 		this.tool = tool;
+		this.traceWriter = traceWriter;
 
 		this.checkDeadlock = deadlock && tool.getModelConfig().getCheckDeadlock();
 		this.checkLiveness = !this.tool.livenessIsTrue();
@@ -126,15 +124,15 @@ public class Simulator {
 			if (Boolean.getBoolean(Simulator.class.getName() + ".rl")) {
 				this.workers.add(new RLSimulationWorker(i, this.tool, this.workerResultQueue, this.rng.nextLong(),
 						this.traceDepth, this.traceNum, this.traceActions, this.checkDeadlock, this.traceFile,
-						this.liveCheck, this.numOfGenStates, this.numOfGenTraces, this.welfordM2AndMean));
+						this.liveCheck, this.numOfGenStates, this.numOfGenTraces, this.welfordM2AndMean, traceWriter));
 			} else if (Boolean.getBoolean(Simulator.class.getName() + ".rlaction")) {
 				this.workers.add(new RLActionSimulationWorker(i, this.tool, this.workerResultQueue, this.rng.nextLong(),
 						this.traceDepth, this.traceNum, this.traceActions, this.checkDeadlock, this.traceFile,
-						this.liveCheck, this.numOfGenStates, this.numOfGenTraces, this.welfordM2AndMean));
+						this.liveCheck, this.numOfGenStates, this.numOfGenTraces, this.welfordM2AndMean, traceWriter));
 			} else {
 				this.workers.add(new SimulationWorker(i, this.tool, this.workerResultQueue, this.rng.nextLong(),
 						this.traceDepth, this.traceNum, this.traceActions, this.checkDeadlock, this.traceFile,
-						this.liveCheck, this.numOfGenStates, this.numOfGenTraces, this.welfordM2AndMean));
+						this.liveCheck, this.numOfGenStates, this.numOfGenTraces, this.welfordM2AndMean, traceWriter));
 			}
 		}
 	
@@ -158,6 +156,7 @@ public class Simulator {
 
 	/* Fields */
 	private final ILiveCheck liveCheck;
+	private final ITraceWriter traceWriter;
 	private final ITool tool;
 	private final Action[] invariants; // the invariants to be checked
 	private final boolean checkDeadlock; // check deadlock?

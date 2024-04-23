@@ -30,14 +30,16 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 
 import tlc2.tool.liveness.ILiveCheck;
+import tlc2.util.ITraceWriter;
 
 public class RLActionSimulationWorker extends RLSimulationWorker {
 
 	public RLActionSimulationWorker(int id, ITool tool, BlockingQueue<SimulationWorkerResult> resultQueue, long seed,
 			int maxTraceDepth, long maxTraceNum, String traceActions, boolean checkDeadlock, String traceFile,
-			ILiveCheck liveCheck, LongAdder numOfGenStates, AtomicLong numOfGenTraces, AtomicLong m2AndMean) {
+			ILiveCheck liveCheck, LongAdder numOfGenStates, AtomicLong numOfGenTraces, AtomicLong m2AndMean,
+			ITraceWriter traceWriter) {
 		super(id, tool, resultQueue, seed, maxTraceDepth, maxTraceNum, traceActions, checkDeadlock, traceFile, liveCheck,
-				numOfGenStates, numOfGenTraces, m2AndMean);
+				numOfGenStates, numOfGenTraces, m2AndMean, traceWriter);
 	}
 	
 	@Override

@@ -33,6 +33,7 @@ import tlc2.output.MP;
 import tlc2.tool.SimulationWorker.SimulationWorkerError;
 import tlc2.tool.SimulationWorker.SimulationWorkerResult;
 import tlc2.tool.liveness.LiveException;
+import tlc2.util.ITraceWriter;
 import tlc2.util.RandomGenerator;
 import tlc2.value.RandomEnumerableValues;
 import util.Assert.TLCRuntimeException;
@@ -56,8 +57,10 @@ public class SingleThreadedSimulator extends Simulator {
 	 * Phaser, ...
 	 */
 	public SingleThreadedSimulator(ITool tool, String metadir, String traceFile, boolean deadlock, int traceDepth,
-			long traceNum, String traceActions, RandomGenerator rng, long seed, FilenameToStream resolver) throws IOException {
-		super(tool, metadir, traceFile, deadlock, traceDepth, traceNum, traceActions, rng, seed, resolver, 1);
+			long traceNum, String traceActions, RandomGenerator rng, long seed, FilenameToStream resolver,
+			ITraceWriter traceWriter) throws IOException {
+		super(tool, metadir, traceFile, deadlock, traceDepth, traceNum, traceActions, rng, seed, resolver, 1,
+				traceWriter);
 	}
 
 	@Override

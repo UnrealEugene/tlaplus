@@ -48,10 +48,7 @@ import tlc2.output.MP;
 import tlc2.tool.impl.Tool;
 import tlc2.tool.liveness.ILiveCheck;
 import tlc2.tool.liveness.LiveCounterExampleException;
-import tlc2.util.IdThread;
-import tlc2.util.RandomGenerator;
-import tlc2.util.SetOfStates;
-import tlc2.util.Vect;
+import tlc2.util.*;
 import tlc2.util.statistics.CountDistinct;
 import tlc2.value.impl.CounterExample;
 import tlc2.value.impl.IntValue;
@@ -114,7 +111,8 @@ public class SimulationWorker extends IdThread implements INextStateFunctor {
 	private final String traceFile;
 
 	protected final ITool tool;
-	private final ILiveCheck liveCheck;	
+	private final ILiveCheck liveCheck;
+	private final ITraceWriter traceWriter;
 
 	final SimulationWorkerStatistics statistics;
 	
@@ -436,14 +434,15 @@ public class SimulationWorker extends IdThread implements INextStateFunctor {
 	
 	public SimulationWorker(int id, ITool tool, BlockingQueue<SimulationWorkerResult> resultQueue,
 			long seed, int maxTraceDepth, long maxTraceNum, boolean checkDeadlock, String traceFile,
-			ILiveCheck liveCheck) {
+			ILiveCheck liveCheck, ITraceWriter traceWriter) {
 		this(id, tool, resultQueue, seed, maxTraceDepth, maxTraceNum, null, checkDeadlock, traceFile, liveCheck,
-				new LongAdder(), new AtomicLong(), new AtomicLong());
+				new LongAdder(), new AtomicLong(), new AtomicLong(), traceWriter);
 	}
 
 	public SimulationWorker(int id, ITool tool, BlockingQueue<SimulationWorkerResult> resultQueue,
 			long seed, int maxTraceDepth, long maxTraceNum, String traceActions, boolean checkDeadlock, String traceFile,
-			ILiveCheck liveCheck, LongAdder numOfGenStates, AtomicLong numOfGenTraces, AtomicLong m2AndMean) {
+			ILiveCheck liveCheck, LongAdder numOfGenStates, AtomicLong numOfGenTraces, AtomicLong m2AndMean,
+			ITraceWriter traceWriter) {
 		super(id);
 		this.localRng = new RandomGenerator(seed);
 		this.tool = tool;
@@ -453,6 +452,7 @@ public class SimulationWorker extends IdThread implements INextStateFunctor {
 		this.checkDeadlock = checkDeadlock;
 		this.traceFile = traceFile;
 		this.liveCheck = liveCheck;
+		this.traceWriter = traceWriter;
 		this.statistics = Simulator.EXTENDED_STATISTICS
 				? new ExtendedSimulationWorkerStatistics(traceActions, numOfGenStates, numOfGenTraces, m2AndMean)
 				: new SimulationWorkerStatistics(traceActions, numOfGenStates, numOfGenTraces, m2AndMean);
@@ -666,7 +666,9 @@ public class SimulationWorker extends IdThread implements INextStateFunctor {
 		// a) Randomly select a state from the set of init states.
 		curState = randomState(this.localRng, initStates);
 		setCurrentState(curState);
-		
+
+		this.traceWriter.writeTraceInitState(curState);
+
 		final Action[] allActions = this.tool.getActions();
 
 		// Simulate a trace up to the maximum specified length.
@@ -694,6 +696,7 @@ public class SimulationWorker extends IdThread implements INextStateFunctor {
 				index = getNextActionAltIndex(index, p, actions, curState);
 			}
 			if (nextStates.empty()) {
+				this.traceWriter.writeTraceEnd();
 				if (checkDeadlock) {
 					// We get here because of deadlock.
 					return Optional.of(new SimulationWorkerError(EC.TLC_DEADLOCK_REACHED, null, curState, getTrace(), null));
@@ -713,7 +716,9 @@ public class SimulationWorker extends IdThread implements INextStateFunctor {
 			s1.execCallable();
 			
 			statistics.collectPostSuccessor(curState, actions[index], s1);
-			
+
+			this.traceWriter.writeTraceAction(curState, s1, actions[index]);
+
 			curState = s1;
 			setCurrentState(curState);
 		}

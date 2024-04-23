@@ -47,12 +47,7 @@ import tlc2.tool.impl.Tool;
 import tlc2.tool.management.ModelCheckerMXWrapper;
 import tlc2.tool.management.TLCStandardMBean;
 import tlc2.tool.queue.IStateQueue;
-import tlc2.util.DotStateWriter;
-import tlc2.util.FP64;
-import tlc2.util.IStateWriter;
-import tlc2.util.NoopStateWriter;
-import tlc2.util.RandomGenerator;
-import tlc2.util.StateWriter;
+import tlc2.util.*;
 import tlc2.value.RandomEnumerableValues;
 import util.Assert.TLCRuntimeException;
 import util.DebugPrinter;
@@ -143,6 +138,8 @@ public class TLC {
 	 * Off (NoopStateWriter) by default.
 	 */
     private IStateWriter stateWriter = new NoopStateWriter();
+
+    private ITraceWriter traceWriter = new NoopTraceWriter();
 
     /**
      * Name of checkpoint from which TLC should recover.
@@ -998,6 +995,28 @@ public class TLC {
                     printErrorMsg("Error: fpbits required.");
                     return false;
                 }
+            } else if (args[index].equals("-trace"))
+            {
+                index++;
+                if (args[index].startsWith("class,"))
+                {
+                    // The provided class must extend the {@link tlc2.util.ITraceWriter} interface
+                    // and a 0-arity constructor.  It will be searched on the classpath.
+                    final String cls = args[index++].replace("class,", "");
+                    try {
+                        Class<? extends ITraceWriter> clazz = Class.forName(cls).asSubclass(ITraceWriter.class);
+                        this.traceWriter = clazz.getDeclaredConstructor().newInstance();
+                    } catch (final Exception e) {
+                        e.printStackTrace();
+                        printErrorMsg(
+                                String.format("Trying to instantiate a custom ITraceWriter implementation %s.", cls));
+                        return false;
+                    }
+                } else
+                {
+                    printErrorMsg(String.format("Error: invalid trace argument %s.", args[index]));
+                    return false;
+                }
             } else
             {
                 if (args[index].charAt(0) == '-')
@@ -1209,11 +1228,11 @@ public class TLC {
 						tool = new DebugTool(mainFile, configFile, resolver, Tool.Mode.Simulation, params, instance);
 					}
 					simulator = new SingleThreadedSimulator(tool, metadir, traceFile, deadlock, traceDepth, 
-	                        traceNum, traceActions, rng, seed, resolver);
+	                        traceNum, traceActions, rng, seed, resolver, traceWriter);
 				} else {
 					tool = new FastTool(mainFile, configFile, resolver, Tool.Mode.Simulation, params);
-					simulator = new Simulator(tool, metadir, traceFile, deadlock, traceDepth, 
-	                        traceNum, traceActions, rng, seed, resolver, TLCGlobals.getNumWorkers());
+					simulator = new Simulator(tool, metadir, traceFile, deadlock, traceDepth,
+	                        traceNum, traceActions, rng, seed, resolver, TLCGlobals.getNumWorkers(), traceWriter);
 				}
                 TLCGlobals.simulator = simulator;
                 result = simulator.simulate();
