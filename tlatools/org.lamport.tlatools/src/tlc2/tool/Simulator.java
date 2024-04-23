@@ -331,6 +331,8 @@ public class Simulator {
 	}
 
 	protected SimulationWorkerResult simulate(final StateVec initStates) throws InterruptedException {
+		this.traceWriter.init();
+
 		// Start up multiple simulation worker threads, each with their own unique seed.
 		final Set<Integer> runningWorkers = new HashSet<>();
 		for (int i = 0; i < this.workers.size(); i++) {

@@ -5,6 +5,11 @@ import tlc2.tool.TLCState;
 
 public class NoopTraceWriter implements ITraceWriter {
     @Override
+    public void init() {
+        // No operation
+    }
+
+    @Override
     public void writeTraceInitState(TLCState state) {
         // No operation
     }
